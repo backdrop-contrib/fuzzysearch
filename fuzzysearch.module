@@ -1,0 +1,258 @@
+<?php
+
+// $Id$
+
+/*
+ * Implementation of fuzzy search indexing
+ * by Blake Lucchesi (www.boldsource.com)
+ * Algorithm: n-gram indexing and retrieval
+ * Code written for Google's Summer of Code 2007
+ *
+ */
+
+/**
+ * hook_menu
+ */
+function fuzzysearch_menu($may_cache){
+  if($may_cache){
+    $items[] = array(
+      'path' => 'admin/settings/fuzzysearch',
+      'title' => t('Fuzzy Search Settings'),
+      'description' => 'Fuzzy Search Settings allow you to index certain node data',
+      'callback' => 'fuzzysearch_admin',
+      'access' => 'administer search',
+      'type' => MENU_NORMAL_ITEM,
+    );
+  } else {
+    
+  }
+  return $items;
+}
+
+function fuzzysearch_admin(){
+  
+  $output .= '<p>Use the checkbox below to reindex your sites nodes</p>';
+  
+  $output .= drupal_get_form('fuzzysearch_form');
+  
+  return $output;
+}
+
+/**
+ * Module Administration (clear index)
+ */
+
+function fuzzysearch_form(){
+  
+  $form['index'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Clear Index',
+    '#default_value' => false,
+  );
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+  );
+
+  return $form;  
+}
+
+function fuzzysearch_form_submit($form_id, $form_values){
+  if($form_values['index']){
+    // Delete all nodes to be queued so we can readd all of them
+    db_query("DELETE FROM {search_index_queue}");
+    
+    $query = db_query("SELECT nid FROM {node}");
+    while($row = db_fetch_object($query)){  
+      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, 'fuzzysearch', %d)", $row->nid, time());
+    }
+    drupal_set_message('Nodes ready for reindexing');
+  }
+}
+
+/**
+ * Implementation of hook_cron
+ * We use this query to find all the nodes that need to be indexed or
+ * reindexed. Instead of the normal search module which uses timestamps to
+ * find out which nodes need indexing this allows other modules to specify
+ * individual nodes for indexing without changing the created/updated
+ * timestamp
+ */
+
+function fuzzysearch_cron(){
+  $query = db_query("SELECT nid FROM {search_index_queue}");
+  while($node = db_fetch_object($query)){
+    fuzzysearch_index($node->nid);
+  }
+}
+
+/**
+ * Index the node data in the fuzzy index table
+ * 
+ * @param nid
+ *  The node id of the node being indexed
+ * @return 
+ *  Returns true on success, false on failure
+ *
+ */
+function fuzzysearch_index($nid){
+  
+  // First step is removing past index
+  db_query("DELETE FROM {search_fuzzy_index} WHERE sid = %d", $nid);
+  
+  $node = node_load($nid);
+  
+  // Index node title
+  $text .= '<h1> '. $node->title .' </h1>';
+  
+  // Index node body
+  $text .= $node->body;
+  
+  // Index taxonomy terms
+  if(module_exists('taxonomy')){
+    foreach($node->taxonomy as $cat){
+      $text .= $cat;
+    }
+  }
+  
+  // Index Username
+  // $user = user_load(1);
+  // $text .= '<strong> '. theme('username', $user) .' </strong>';
+
+  // Multipliers for scores of words inside certain HTML tags.
+  // Note: 'a' must be included for link ranking to work.
+  $tags = array('h1' => 25,
+                'h2' => 18,
+                'h3' => 15,
+                'h4' => 12,
+                'h5' => 9,
+                'h6' => 6,
+                'u' => 3,
+                'b' => 3,
+                'i' => 3,
+                'strong' => 3,
+                'em' => 3,
+                'a' => 10);
+  
+  // Strip off all ignored tags to speed up processing, but insert space before/after
+  // them to keep word boundaries.
+  $text = str_replace(array('<', '>'), array(' <', '> '), $text);
+  $text = strip_tags($text, '<'. implode('><', array_keys($tags)) .'>');
+
+  $split = preg_split('/\s*<([^>]+?)>\s*/', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+  // Loop through each word and index its trigrams
+  // TODO: Filter the words so that tags and links add scores
+
+  $tag = false;
+   
+  foreach($split as $k => $value){
+  
+    if($tag){
+      if("/" != substr($value, 0, 1)){
+        $score = 5;
+      } else {
+        $score = 1;
+      }
+      $last = $value;
+    } else {
+      if($value != ''){
+        $value = preg_replace('%[^a-zA-Z0-9\s_]%', '', $value);
+        $words = split(' ', $value);
+        print_r($words);
+        foreach($words as $key => $word)
+        // build the trigrams for each of the words.
+        if($word != '' || $word != ' '){
+         $length = strlen($word); 
+          // store the fraction length of trigram / total word length
+          // this can be summed on the matching results later to gauge completeness
+          // of query result
+          if($length > 3){
+            $completeness = (double) 1/($length-2);
+          } else {
+            $completeness = 1;
+          }
+          if($length > 2){
+            for($i=0; $i<$length-2;$i++){
+              db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score) VALUES (%d, '%s', %f, %f)",
+                $nid, substr($word, $i, 3), $completeness, $score);
+            }
+          }
+        }
+      }
+    }
+  
+    $tag = !$tag;
+  } // end foreach
+
+  // Update the node table to make indexed = 1;
+  db_query("DELETE FROM {search_index_queue} WHERE nid = %d", $nid);
+  
+}
+
+
+
+
+
+
+/**
+ * Create a function for other modules to call to update a node's index
+ */
+ 
+function fuzzysearch_index_queue($nid, $module){
+  // test this later, may need to use an update to check if the node is already called for indexing
+  return db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
+  
+}
+
+
+
+
+
+/**
+ * Deconstruct the search query to determine type and then
+ * build the sql query to return relevant results
+ *
+ */
+
+function fuzzysearch_query($keys){
+  
+  $length = count($keys);
+  for ($i=0; $i < $length; $i++) { 
+    $clause .= " trigram = '". $keys[$i] . "'";
+    if($i != $length - 1){
+      $clause .= ' OR';
+    }
+  }
+
+  $query = db_query("SELECT sid, SUM(score) score, SUM(completeness) completeness FROM {search_fuzzy_index} WHERE $clause GROUP BY sid ORDER BY completeness DESC");
+
+  while($row = db_fetch_array($query)){
+    $results[] = array($row['sid'], $row['score'], $row['completeness']);
+  }
+  
+  return $results;
+}
+
+
+
+function fuzzysearch_process($query){
+
+  $query = search_simplify($query);
+  $words = explode(' ', $query);
+  
+  foreach($words as $k => $word){
+    
+    // TODO Change type of query based on boolean operators
+    $length = strlen($word);
+    for ($i=0; $i < $length - 2; $i++) { 
+      $keys[] = substr($word, $i, 3);
+    }
+  }
+  
+  $results = fuzzysearch_query($keys);
+  
+  print_r($results);
+  
+}

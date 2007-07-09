@@ -1,0 +1,5 @@
+; Id:
+name = Fuzzy Search
+description = Enables site-wide fuzzy keyword searching.
+package = Search Engine
+version = VERSION
