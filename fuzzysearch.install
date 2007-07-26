@@ -5,17 +5,18 @@ function fuzzysearch_install(){
     case 'mysql':
     case 'mysqli':  
       db_query("CREATE TABLE search_index_queue (
-      nid INT NOT NULL AUTO_INCREMENT PRIMARY KEY ,
-      module VARCHAR( 60 ) NOT NULL ,
-      timestamp INT( 11 ) NOT NULL
+        nid INT NOT NULL AUTO_INCREMENT PRIMARY KEY ,
+        module VARCHAR( 60 ) NOT NULL ,
+        timestamp INT( 11 ) NOT NULL
       )");
       
       db_query("CREATE TABLE search_fuzzy_index (
         id int(11) NOT NULL auto_increment,
         sid int(11) NOT NULL,
-        trigram varchar(3) NOT NULL,
+        trigram varchar(6) NOT NULL,
         completeness double NOT NULL,
-        score decimal(3,2) NOT NULL,
+        score decimal(8,2) NOT NULL,
+        total decimal(8,2) NOT NULL,
         PRIMARY KEY  (`id`)
       )");
       
@@ -26,6 +27,16 @@ function fuzzysearch_install(){
   }
 }
 
-
-
+// function fuzzysearch_update_1()
+//   $return = array()
+//   switch ($GLOBALS['db_type']){
+//     case 'mysql':
+//     case 'mysqli':
+//       $return[] = update_sql();
+//       break;
+//     case 'pgsql':
+//       break;
+//   }
+//   
+//   return $return;
 ?>
