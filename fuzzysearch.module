@@ -506,7 +506,7 @@ function fuzzysearch_block($op = 'list', $delta = 0) {
     $blocks[0]['info'] = t('Fuzzy search form');
     return $blocks;
   }
-  else if ($op == 'view' && user_access('search content')) {
+  else if ($op == 'view' && user_access('fuzzysearch content')) {
     $block['content'] = drupal_get_form('fuzzysearch_box_form');
     $block['subject'] = t('Search');
     return $block;
