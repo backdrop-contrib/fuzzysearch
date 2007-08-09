@@ -1,6 +1,6 @@
 <?php
-
-function fuzzysearch_install(){
+// $Id$
+function fuzzysearch_install() {
   switch ($GLOBALS['db_type']) {
     case 'mysql':
     case 'mysqli':  
@@ -39,4 +39,3 @@ function fuzzysearch_install(){
 //   }
 //   
 //   return $return;
-?>

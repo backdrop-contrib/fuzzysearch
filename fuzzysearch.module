@@ -13,36 +13,42 @@
 /**
  * hook_menu
  */
-function fuzzysearch_menu($may_cache){
-  if($may_cache){
+function fuzzysearch_menu($may_cache) {
+  if ($may_cache) {
     $items[] = array(
       'path' => 'admin/settings/fuzzysearch',
       'title' => t('Fuzzy Search Settings'),
       'description' => 'Fuzzy Search Settings allow you to index certain node data',
       'callback' => 'fuzzysearch_admin',
-      'access' => 'administer search',
+      'access' => user_access('administer fuzzysearch'),
       'type' => MENU_NORMAL_ITEM,
     );
-  } else {
+  }
+  else {
     $items[] = array(
       'path' => 'fuzzysearch/results',
-      'title' => t('Search Results'),
+      'title' => t('Search'),
       'callback' => 'fuzzysearch_show_results',
-      'access' => true,
+      'access' => user_access('fuzzysearch content'),
       'type' => MENU_DYNAMIC_ITEM,
     );
   }
   return $items;
 }
 
-function fuzzysearch_admin(){
-  
+/**
+ * Implementation of hook_perm
+ */
+function fuzzysearch_perm() {
+  return array('administer fuzzysearch', 'fuzzysearch content');
+}
+/**
+ * Build the administration settings panel
+ */
+function fuzzysearch_admin() {
   $output .= '<p>Use the checkbox below to reindex your sites nodes</p>';
-  
-  $output .= drupal_get_form('fuzzysearch_form');
-  
+  $output .= drupal_get_form('fuzzysearch_admin_form');
   $output .= drupal_get_form('fuzzysearch_scoring');
-  
   return $output;
 }
 
@@ -50,7 +56,7 @@ function fuzzysearch_admin(){
  * Module Administration (clear index)
  */
 
-function fuzzysearch_form(){
+function fuzzysearch_admin_form() {
   
   $form['update'] = array(
     '#title' => t('Re-Index Site'),
@@ -84,14 +90,14 @@ function fuzzysearch_form(){
   return $form;  
 }
 
-function fuzzysearch_form_submit($form_id, $form_values){
-  if($form_values['reindex']){
+function fuzzysearch_admin_form_submit($form_id, $form_values) {
+  if ($form_values['reindex']) {
     // Delete all nodes to be queued so we can readd all of them
     db_query("DELETE FROM {search_index_queue}");
     
     $query = db_query("SELECT nid FROM {node}");
-    while($row = db_fetch_object($query)){  
-      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, 'fuzzysearch', %d)", $row->nid, time());
+    while ($row = db_fetch_object($query)) {
+      fuzzysearch_reindex($row->nid, 'fuzzysearch');
     }
     drupal_set_message('Nodes ready for reindexing, please run cron to update the index.');
   }
@@ -100,12 +106,31 @@ function fuzzysearch_form_submit($form_id, $form_values){
 
 
 /**
+ * Implementation of hook_nodeapi()
+ * 
+ * Used to remove node data from index upon deletion and
+ * queue a node for indexing on insertion
+ */
+
+function fuzzysearch_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  switch ($op) {
+    case 'update':
+    case 'insert':
+      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $node->nid, 'node', time());
+      break;
+    case 'delete':
+      db_query("DELETE FROM {search_fuzzy_index} WHERE sid = %d", $node->nid);
+      break;
+  }
+}
+
+/**
  * Scoring Management - Allow the site administrator to assign
  * importance factors to each of the scores returned by modules
  * that implement hook_search_score()
  */
 
-function fuzzysearch_scoring(){
+function fuzzysearch_scoring() {
   
   $form['scoring'] = array(
     '#title' => t('Scoring Adjustment'),
@@ -132,7 +157,7 @@ function fuzzysearch_scoring(){
   //  of the modifier  
   $scores = module_invoke_all('search_score', 'settings', null);
   
-  foreach($scores as $key => $score){
+  foreach ($scores as $key => $score) {
     $form_index = $score['id'];
     $form['scoring'][$form_index] = array(
       '#title' => $score['title'],
@@ -142,12 +167,11 @@ function fuzzysearch_scoring(){
       '#default_value' => variable_get('search_scoring_'. $score['id'], 5),
     );
   }
-  
+
   $form['scoring']['submit'] = array(
     '#value' => t('Update Score Factors'),
     '#type' => 'submit',
   );
-
   return $form;
 }
 
@@ -155,14 +179,12 @@ function fuzzysearch_scoring(){
  * Save the score modifiers as set in the administrative form.
  */
 
-function fuzzysearch_scoring_submit($form_id, $form_values){
-
-  foreach($form_values as $key => $value){
-    if($key != 'op' || $key != 'submit' || $key != 'form_token' || $key != 'form_id'){
+function fuzzysearch_scoring_submit($form_id, $form_values) {
+  foreach ($form_values as $key => $value) {
+    if ($key != 'op' || $key != 'submit' || $key != 'form_token' || $key != 'form_id') {
       variable_set('search_scoring_'. $key, $value);
     }
   }
-  
   drupal_set_message('Score factor multipliers have been updated');
 }
 
@@ -174,8 +196,8 @@ function fuzzysearch_scoring_submit($form_id, $form_values){
  *            - 'index' returns a score modifier to the node being indexed
  */
 
-function fuzzysearch_search_score($op, $node){
-  switch($op){
+function fuzzysearch_search_score($op, $node) {
+  switch ($op) {
     case 'settings':
       $info[] = array(
         'id' => 'fuzzysearch',
@@ -183,7 +205,6 @@ function fuzzysearch_search_score($op, $node){
         'description' => 'This score factor depends on how fuzzy something is',
       );
       return $info;
-      
     case 'index':
       // do some processing to figure out what score to bring back
       // the node variable is avaiable for this processing
@@ -199,6 +220,17 @@ function fuzzysearch_search_score($op, $node){
 }
 
 /**
+ * Provide an external API function that allows modules to flag a node for reindexing
+ *
+ * @param $nid - nid of the node to be reindexed
+ * @param $module - name of the module flagging the node
+ */
+function fuzzysearch_reindex($nid, $module) {
+  db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
+}
+
+
+/**
  * Implementation of hook_cron
  * We use this query to find all the nodes that need to be indexed or
  * reindexed. Instead of the normal search module which uses timestamps to
@@ -206,16 +238,11 @@ function fuzzysearch_search_score($op, $node){
  * individual nodes for indexing without changing the created/updated
  * timestamp
  */
-
-function fuzzysearch_cron(){
-  $time1 = microtime();
+function fuzzysearch_cron() {
   $query = db_query("SELECT nid FROM {search_index_queue}");
-  while($node = db_fetch_object($query)){
-    fuzzysearch_index($node->nid);
+  while ($result = db_fetch_object($query)) {
+    fuzzysearch_index($result->nid);
   }
-  $time2 = microtime();
-  $process = $time2-$time1;
-  print '<h2>Time To Process: '. $process .'s</h2>';
 }
 
 /**
@@ -227,7 +254,7 @@ function fuzzysearch_cron(){
  *  Returns true on success, false on failure
  *
  */
-function fuzzysearch_index($nid){
+function fuzzysearch_index($nid) {
   
   // First step is removing past index
   db_query("DELETE FROM {search_fuzzy_index} WHERE sid = %d", $nid);
@@ -241,12 +268,31 @@ function fuzzysearch_index($nid){
   $text .= $node->body;
   
   // Implementation of nodeapi's update_index op.
-  $outside_text = module_invoke_all('nodeapi', $node, 'update index');
-  foreach($outside_text as $content){
-    $text .= $content;
+  $outside_text = module_invoke_all('nodeapi', $node, 'update index', null, null);
+  if ($outside_text) {
+    foreach ($outside_text as $content) {
+      $text .= $content;
+    }
   }
   
-
+  // TODO Fix cck inputs
+  // Gather CCK text fields and insert that data into index
+  if (module_exists('content')) {
+    $fields = content_fields(NULL, $node->type);
+    // Gather the data from each of the text inputs from CCK that are enabled for this
+    // node type
+    foreach ($fields as $key => $field) {
+      if ($field['type'] == 'text' && $field['type_name'] == $node->type) {
+        foreach ($node->$key as $index => $value) {
+          if ($value['value'] != '') {
+            $text .= $value['value'];            
+          }
+        }
+      }
+    } // end field foreach
+  } // end cck data gathering
+  
+  
   // Multipliers for scores of words inside certain HTML tags.
   // Note: 'a' must be included for link ranking to work.
   $tags = array('h1' => 25,
@@ -269,32 +315,33 @@ function fuzzysearch_index($nid){
   $content = preg_replace('/<([A-Z][A-Z0-9]*)[^>]*>(.*?)<\/\1>/i', '', $text);
   $content = fuzzysearch_cleanse($content);
 
+  $words = array();
+  $index = array();
   $words = preg_split('/\s/', $content, -1, PREG_SPLIT_NO_EMPTY);
 
   // Build the index array with scores
-  foreach($words as $key => $word){
+  foreach ($words as $key => $word) {
     $index[$word] += 1;
   }
   
   // Find all words located within tags (score > 1)
-  preg_match_all('/<([A-Z][A-Z0-9]*)([^>]*)>(.*?)<\/\1>/i',$text, $tagged);
+  preg_match_all('/<([A-Z][A-Z0-9]*)([^>]*)>(.*?)<\/\1>/i', $text, $tagged);
   
   // filter through each set of content inbetween tags
-  foreach($tagged[3] as $key => $content){
+  foreach ($tagged[3] as $key => $content) {
     $content = fuzzysearch_cleanse($content);
     $words = preg_split('/\s/', $content, -1, PREG_SPLIT_NO_EMPTY);
     
     $tag = $tagged[1][$key];
     $tag_score = $tags[$tag];
     
-    foreach($words as $word){
+    foreach ($words as $word) {
       $index[$word] += $tag_score;
-    }
-    
+    } 
   }
-  
+
   // Strip all stop words if stop words are enabled
-  if(variable_get('search_stop_words', false)){
+  if (variable_get('search_stop_words', false)) {
     //  $text = str_replace()
   }
 
@@ -304,7 +351,7 @@ function fuzzysearch_index($nid){
   $scores = module_invoke_all('search_score', 'index', $node);
   
   //  Build the final score multiplier for each node based on returned multipliers from other nodes
-  foreach($scores as $score){
+  foreach ($scores as $score) {
     $multiplier = variable_get('search_scoring_'. $score['id'], 5);
     $search_score += $score['score'] * $multiplier;
   }
@@ -312,28 +359,28 @@ function fuzzysearch_index($nid){
   // Get the nlength variable from our settings
   $nlength = variable_get('search_nlength', 3);
 
-  foreach($index as $word => $score){
+  foreach ($index as $word => $score) {
     $length = strlen($word);
     
     //  Ensure that having all score modifiers set to 0 will not affect our natural scoring
-    if($search_score > 0){
+    if ($search_score > 0) {
       $total = $score * $search_score;          
     } 
     else {
       $total = $score;
     }
     
-    if($length > $nlength){
+    if ($length > $nlength) {
       //  Calculate how complete the ngram is compared to the length of the word
       $completeness = 1 / ($length - $nlength + 1);
       $total = $total * $completeness;
       //  Create ngrams and index them
-      for($i=0; $i < ($length - $nlength + 1); $i++){
+      for ($i=0; $i < ($length - $nlength + 1); $i++) {
         db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
           $nid, substr($word, $i, $nlength), $completeness, $score, $total);
       }
-      
-    } else {
+    }
+    else {
       //  The ngram is the same length as the actual word so it is complete
       $completeness = 1;
       $total = $completeness * $total;
@@ -342,18 +389,14 @@ function fuzzysearch_index($nid){
         $nid, $word, $completeness, $score, $total);
     }
   }
-
   // Update the node table to make indexed = 1;
-  db_query("DELETE FROM {search_index_queue} WHERE nid = %d", $nid);
-  
+  db_query("DELETE FROM {search_index_queue} WHERE nid = %d", $nid); 
 }
-
-
 
 /**
  * Strip all non alphanumeric characters from a string
  */
-function fuzzysearch_cleanse($text){
+function fuzzysearch_cleanse($text) {
   $text = strip_tags($text);
   $text = strtolower($text);
   return preg_replace('%[^a-zA-Z0-9\s]%', '', $text);
@@ -363,8 +406,7 @@ function fuzzysearch_cleanse($text){
 /**
  * Create a function for other modules to call to update a node's index
  */
- 
-function fuzzysearch_index_queue($nid, $module){
+function fuzzysearch_index_queue($nid, $module) {
   // test this later, may need to use an update to check if the node is already called for indexing
   return db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
   
@@ -376,26 +418,25 @@ function fuzzysearch_index_queue($nid, $module){
  * build the sql query to return relevant results
  *
  */
-
-function fuzzysearch_query($keys){
-  
+function fuzzysearch_query($keys) {
   $length = count($keys);
   for ($i=0; $i < $length; $i++) { 
-    $clause .= " trigram = '". $keys[$i] . "'";
-    if($i != $length - 1){
+    $clause .= " trigram = '". $keys[$i] ."'";
+    if ($i != $length - 1) {
       $clause .= ' OR';
     }
   }
 
-  $query = db_query("SELECT sid, SUM(score) score, SUM(completeness) completeness, SUM(total) total, n.title FROM {search_fuzzy_index} f LEFT JOIN {node} n ON (n.nid = f.sid) WHERE $clause GROUP BY sid ORDER BY score DESC");
+  $query = db_query("SELECT sid, SUM(score) score, SUM(completeness) completeness, SUM(total) total, n.title, nr.teaser FROM {search_fuzzy_index} f LEFT JOIN {node} n ON (n.nid = f.sid) LEFT JOIN {node_revisions} nr ON (n.vid = nr.vid) WHERE $clause GROUP BY sid ORDER BY score DESC");
 
-  while($row = db_fetch_array($query)){
+  while ($row = db_fetch_array($query)) {
     $results[] = array(
       'nid' => $row['sid'],
       'title' => $row['title'],
       'score' => $row['score'],
       'completeness' => $row['completeness'],
       'total' => $row['total'],
+      'teaser' => $row['teaser'],
     );
   }
   
@@ -403,16 +444,18 @@ function fuzzysearch_query($keys){
 }
 
 
-
-function fuzzysearch_process($query){
+/**
+ * Process the search query
+ */
+function fuzzysearch_process($query) {
 
   $nlength = variable_get('search_nlength', 3);
 
   $words = explode(' ', $query);
-  foreach($words as $k => $word){
+  foreach ($words as $k => $word) {
     // TODO Change type of query based on boolean operators
     $length = strlen($word);
-    if($length > $nlength){
+    if ($length > $nlength) {
       for ($i=0; $i < $length - 2; $i++) { 
         $keys[] = substr($word, $i, $nlength);
       }
@@ -420,49 +463,116 @@ function fuzzysearch_process($query){
     else{
       $keys[] = $word;
     }
-    
   }
   
   $results = fuzzysearch_query($keys);
-  if($results){
-    foreach ($results as $key => $value) {
-      $output .= '<h3>'. l($value['title'], 'node/'. $value['nid']) .'</h3>';
-      $output .= '<p>Total: '. $value['total'] .' Score '. $value['score'] .': Completeness ' . $value['completeness'] .'</p>';
-    }
-  } else {
-    $output .= 'Sorry no matches found.';
+  if ($results) {
+    $output .= theme('fuzzysearch_results', $results);
+  }
+  else {
+    $output .= '<p>Sorry no matches found.</p>';
   }
   return $output;
 }
 
-function fuzzysearch_box(){
 
-  $form['search_keys'] = array(
+/**
+ * Form to search the index
+ */
+function fuzzysearch_box_form($keys = '') {
+  $form['#base'] = 'fuzzysearch_form';
+  $form['keys'] = array(
     '#type' => 'textfield',
-    '#size' => 45,
-    '#default_value' => check_plain(arg(2)),
+    '#size' => 15,
+    '#default_value' => $keys,
   );
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Search'),
   );
-  
   return $form;
 }
 
-function fuzzysearch_box_submit($form_id, $form_values){
-  drupal_goto('fuzzysearch/results/'. check_plain(trim($form_values['search_keys'])));
+function theme_fuzzysearch_box_form($form) {
+  $output .= '<div class="container-inline">'. drupal_render($form['keys']) . drupal_render($form['submit']) .'</div>';
+  $output .= drupal_render($form);
+  return $output;
+}
+/**
+ * Implementation of hook_block().
+ */
+function fuzzysearch_block($op = 'list', $delta = 0) {
+  if ($op == 'list') {
+    $blocks[0]['info'] = t('Fuzzy search form');
+    return $blocks;
+  }
+  else if ($op == 'view' && user_access('search content')) {
+    $block['content'] = drupal_get_form('fuzzysearch_box_form');
+    $block['subject'] = t('Search');
+    return $block;
+  }
 }
 
-function fuzzysearch_show_results($keys){
-  $output .= '<div class="clear-block">';
-  $output .= drupal_get_form('fuzzysearch_box');
-  $output .= '</div>';
-  $output .= fuzzysearch_process($keys);
+
+/**
+ * Form to search the index
+ */
+function fuzzysearch_form($keys = '') {
+  $form['keys'] = array(
+    '#title' => t('Enter search phrase'),
+    '#type' => 'textfield',
+    '#size' => 35,
+    '#default_value' => $keys,
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+  );
+  return $form;
+}
+
+function fuzzysearch_form_submit($form_id, $form_values) {
+  drupal_goto('fuzzysearch/results/'. check_plain(trim($form_values['keys'])));
+}
+
+/**
+ * Output formatting for the search form
+ */
+function theme_fuzzysearch_form($form) {
+  $output .= '<div class="search-form">'. drupal_render($form['keys']) . drupal_render($form['submit']) .'</div>';
+  $output .= drupal_render($form);
   return $output;
 }
 
-function theme_fuzzysearch_box($form){
-  $output = drupal_render($form);
+/**
+ * Gather results from the index and build result page
+ */
+function fuzzysearch_show_results($keys = '') {
+  drupal_add_css($base_path . drupal_get_path('module', 'fuzzysearch') .'/fuzzysearch.css', 'module');
+  $output .= '<div class="clear-block">';
+  $output .= drupal_get_form('fuzzysearch_form', $keys);
+  $output .= '</div>';
+  $output .= fuzzysearch_process($keys);    
+  return $output;
+}
+
+/**
+ * Theme the results from the index
+ */
+
+function theme_fuzzysearch_results($results) {
+  $output .= '<div class="box">';
+  $output .= '<h2>'. t('Search Results') .'</h2>'; 
+  $output .= '<dl class="search-results">';
+  foreach ($results as $result) {
+    $i++;
+    $odd = $i%2 ? 'odd' : 'even';
+    //$node = node_load($result['nid']);
+    $output .= '<dt class="title">'. l(t($result['title']), 'node/'. $result['nid']) .'</dt>';
+    $output .= '<dd>';
+    $output .= '<p>'. strip_tags($result['teaser']) .'</p>';
+    $output .= '</dd>';
+  }
+  $output .= '</dl></div>';
   return $output;
 }
