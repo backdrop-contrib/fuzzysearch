@@ -11,6 +11,49 @@
  */
 
 /**
+ * Matches Unicode character classes to exclude from the search index.
+ *
+ * See: http://www.unicode.org/Public/UNIDATA/UCD.html#General_Category_Values
+ *
+ * The index only contains the following character classes:
+ * Lu     Letter, Uppercase
+ * Ll     Letter, Lowercase
+ * Lt     Letter, Titlecase
+ * Lo     Letter, Other
+ * Nd     Number, Decimal Digit
+ * No     Number, Other
+ */
+define('PREG_CLASS_SEARCH_EXCLUDE',
+'\x{0}-\x{2f}\x{3a}-\x{40}\x{5b}-\x{60}\x{7b}-\x{bf}\x{d7}\x{f7}\x{2b0}-'.
+'\x{385}\x{387}\x{3f6}\x{482}-\x{489}\x{559}-\x{55f}\x{589}-\x{5c7}\x{5f3}-'.
+'\x{61f}\x{640}\x{64b}-\x{65e}\x{66a}-\x{66d}\x{670}\x{6d4}\x{6d6}-\x{6ed}'.
+'\x{6fd}\x{6fe}\x{700}-\x{70f}\x{711}\x{730}-\x{74a}\x{7a6}-\x{7b0}\x{901}-'.
+'\x{903}\x{93c}\x{93e}-\x{94d}\x{951}-\x{954}\x{962}-\x{965}\x{970}\x{981}-'.
+'\x{983}\x{9bc}\x{9be}-\x{9cd}\x{9d7}\x{9e2}\x{9e3}\x{9f2}-\x{a03}\x{a3c}-'.
+'\x{a4d}\x{a70}\x{a71}\x{a81}-\x{a83}\x{abc}\x{abe}-\x{acd}\x{ae2}\x{ae3}'.
+'\x{af1}-\x{b03}\x{b3c}\x{b3e}-\x{b57}\x{b70}\x{b82}\x{bbe}-\x{bd7}\x{bf0}-'.
+'\x{c03}\x{c3e}-\x{c56}\x{c82}\x{c83}\x{cbc}\x{cbe}-\x{cd6}\x{d02}\x{d03}'.
+'\x{d3e}-\x{d57}\x{d82}\x{d83}\x{dca}-\x{df4}\x{e31}\x{e34}-\x{e3f}\x{e46}-'.
+'\x{e4f}\x{e5a}\x{e5b}\x{eb1}\x{eb4}-\x{ebc}\x{ec6}-\x{ecd}\x{f01}-\x{f1f}'.
+'\x{f2a}-\x{f3f}\x{f71}-\x{f87}\x{f90}-\x{fd1}\x{102c}-\x{1039}\x{104a}-'.
+'\x{104f}\x{1056}-\x{1059}\x{10fb}\x{10fc}\x{135f}-\x{137c}\x{1390}-\x{1399}'.
+'\x{166d}\x{166e}\x{1680}\x{169b}\x{169c}\x{16eb}-\x{16f0}\x{1712}-\x{1714}'.
+'\x{1732}-\x{1736}\x{1752}\x{1753}\x{1772}\x{1773}\x{17b4}-\x{17db}\x{17dd}'.
+'\x{17f0}-\x{180e}\x{1843}\x{18a9}\x{1920}-\x{1945}\x{19b0}-\x{19c0}\x{19c8}'.
+'\x{19c9}\x{19de}-\x{19ff}\x{1a17}-\x{1a1f}\x{1d2c}-\x{1d61}\x{1d78}\x{1d9b}-'.
+'\x{1dc3}\x{1fbd}\x{1fbf}-\x{1fc1}\x{1fcd}-\x{1fcf}\x{1fdd}-\x{1fdf}\x{1fed}-'.
+'\x{1fef}\x{1ffd}-\x{2070}\x{2074}-\x{207e}\x{2080}-\x{2101}\x{2103}-\x{2106}'.
+'\x{2108}\x{2109}\x{2114}\x{2116}-\x{2118}\x{211e}-\x{2123}\x{2125}\x{2127}'.
+'\x{2129}\x{212e}\x{2132}\x{213a}\x{213b}\x{2140}-\x{2144}\x{214a}-\x{2b13}'.
+'\x{2ce5}-\x{2cff}\x{2d6f}\x{2e00}-\x{3005}\x{3007}-\x{303b}\x{303d}-\x{303f}'.
+'\x{3099}-\x{309e}\x{30a0}\x{30fb}-\x{30fe}\x{3190}-\x{319f}\x{31c0}-\x{31cf}'.
+'\x{3200}-\x{33ff}\x{4dc0}-\x{4dff}\x{a015}\x{a490}-\x{a716}\x{a802}\x{a806}'.
+'\x{a80b}\x{a823}-\x{a82b}\x{d800}-\x{f8ff}\x{fb1e}\x{fb29}\x{fd3e}\x{fd3f}'.
+'\x{fdfc}-\x{fe6b}\x{feff}-\x{ff0f}\x{ff1a}-\x{ff20}\x{ff3b}-\x{ff40}\x{ff5b}-'.
+'\x{ff65}\x{ff70}\x{ff9e}\x{ff9f}\x{ffe0}-\x{fffd}');
+
+
+/**
  * hook_menu
  */
 function fuzzysearch_menu($may_cache) {
@@ -271,7 +314,7 @@ function fuzzysearch_index($nid) {
   $outside_text = module_invoke_all('nodeapi', $node, 'update index', null, null);
   if ($outside_text) {
     foreach ($outside_text as $content) {
-      $text .= $content;
+      $text .= ' '.$content;
     }
   }
   
@@ -285,7 +328,7 @@ function fuzzysearch_index($nid) {
       if ($field['type'] == 'text' && $field['type_name'] == $node->type) {
         foreach ($node->$key as $index => $value) {
           if ($value['value'] != '') {
-            $text .= $value['value'];            
+            $text .= ' '. $value['value'];            
           }
         }
       }
@@ -311,19 +354,42 @@ function fuzzysearch_index($nid) {
   // Strip off all ignored tags to speed up processing
   $text = strip_tags($text, '<'. implode('><', array_keys($tags)) .'>');
 
+  // Strip all stop words if stop words are enabled
+  if (variable_get('search_stop_words', false)) {
+    //  $text = str_replace()
+  }
+  
+  //  Allow other modules to modify the score of the node based on each owns calculations
+  //  the sum of all the scores added to each node is then multiplied by the score of the word,
+  //  this allows for faster result queries because all scoring is done at the time of indexing
+  $hook_scores = module_invoke_all('search_score', 'index', $node);
+  
+  //  Build the final score multiplier for each node based on returned multipliers from other nodes
+  foreach ($hook_scores as $score) {
+    $multiplier = variable_get('search_scoring_'. $score['id'], 5);
+    $hook_score += $score['score'] * $multiplier;
+  }
+
+  ## BEGIN INDEXING CONTENT
   // Find all words not located within tags (score = 1)
   $content = preg_replace('/<([A-Z][A-Z0-9]*)[^>]*>(.*?)<\/\1>/i', '', $text);
   $content = fuzzysearch_cleanse($content);
 
   $words = array();
-  $index = array();
+  $index_words = array();
   $words = preg_split('/\s/', $content, -1, PREG_SPLIT_NO_EMPTY);
 
   // Build the index array with scores
-  foreach ($words as $key => $word) {
-    $index[$word] += 1;
-  }
-  
+  foreach ($words as $word) {
+    $key = array_search($word, $index_words);
+    if ($key === FALSE) {
+      $index_words[] = $word;
+      $index_scores[] = 1;
+    }
+    else {
+      $index_scores[$key] += 1;
+    }  }
+
   // Find all words located within tags (score > 1)
   preg_match_all('/<([A-Z][A-Z0-9]*)([^>]*)>(.*?)<\/\1>/i', $text, $tagged);
   
@@ -331,66 +397,65 @@ function fuzzysearch_index($nid) {
   foreach ($tagged[3] as $key => $content) {
     $content = fuzzysearch_cleanse($content);
     $words = preg_split('/\s/', $content, -1, PREG_SPLIT_NO_EMPTY);
-    
     $tag = $tagged[1][$key];
     $tag_score = $tags[$tag];
     
     foreach ($words as $word) {
-      $index[$word] += $tag_score;
-    } 
-  }
-
-  // Strip all stop words if stop words are enabled
-  if (variable_get('search_stop_words', false)) {
-    //  $text = str_replace()
-  }
-
-  //  Allow other modules to modify the score of the node based on each owns calculations
-  //  the sum of all the scores added to each node is then multiplied by the score of the word,
-  //  this allows for faster result queries because all scoring is done at the time of indexing
-  $scores = module_invoke_all('search_score', 'index', $node);
-  
-  //  Build the final score multiplier for each node based on returned multipliers from other nodes
-  foreach ($scores as $score) {
-    $multiplier = variable_get('search_scoring_'. $score['id'], 5);
-    $search_score += $score['score'] * $multiplier;
-  }
-
-  // Get the nlength variable from our settings
-  $nlength = variable_get('search_nlength', 3);
-
-  foreach ($index as $word => $score) {
-    $length = strlen($word);
-    
-    //  Ensure that having all score modifiers set to 0 will not affect our natural scoring
-    if ($search_score > 0) {
-      $total = $score * $search_score;          
-    } 
-    else {
-      $total = $score;
-    }
-    
-    if ($length > $nlength) {
-      //  Calculate how complete the ngram is compared to the length of the word
-      $completeness = 1 / ($length - $nlength + 1);
-      $total = $total * $completeness;
-      //  Create ngrams and index them
-      for ($i=0; $i < ($length - $nlength + 1); $i++) {
-        db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
-          $nid, substr($word, $i, $nlength), $completeness, $score, $total);
+      $key = array_search($word, $index_words);
+      if ($key === FALSE) {
+        $index_words[] = $word;
+        $index_scores[] = $tag_score;
       }
-    }
-    else {
-      //  The ngram is the same length as the actual word so it is complete
-      $completeness = 1;
-      $total = $completeness * $total;
-      //  Index the ngram
-      db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
-        $nid, $word, $completeness, $score, $total);
-    }
+      else {
+        $index_scores[$key] += $tag_score;
+      }
+    } 
+  }  
+
+  foreach ($index_words as $key => $word) {
+    fuzzysearch_index_insert($word, $nid, $index_scores[$key], $hook_score);
   }
+
   // Update the node table to make indexed = 1;
   db_query("DELETE FROM {search_index_queue} WHERE nid = %d", $nid); 
+}
+
+/**
+ * Insert the words into the database as they are indexed
+ * @param $word: word to insert into the index
+ * @param $nid: the node id that is to be associated with this word
+ * @param $word_score: score given to the word based on the tag it is in
+ * @param $node_score: score modifier given to the node from hook_search_score
+ */
+function fuzzysearch_index_insert($word, $nid, $word_score, $node_score){
+  $length = fuzzysearch_utf8_strlen($word);
+  $nlength = variable_get('search_nlength', 3);
+  //  Ensure that having all score modifiers set to 0 will not affect our natural scoring
+  if ($node_score > 0) {
+    $total_score = $word_score * $node_score;          
+  } 
+  else {
+    $total_score = $word_score;
+  }
+    
+  if ($length > $nlength) {
+    //  Calculate how complete the ngram is compared to the length of the word
+    $completeness = 1 / ($length - $nlength + 1);
+    $total = $total * $completeness;
+    //  Create ngrams and index them
+    for ($i=0; $i < ($length - $nlength + 1); $i++) {
+      db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
+        $nid, fuzzysearch_utf8_substr($word, $i, $nlength), $completeness, $word_score, $total_score);
+    }
+  }
+  else {
+    //  The ngram is the same length as the actual word so it is complete
+    $completeness = 1;
+    $total = $completeness * $total;
+    //  Index the ngram
+    db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
+      $nid, $word, $completeness, $word_score, $total_score);
+  }
 }
 
 /**
@@ -399,7 +464,25 @@ function fuzzysearch_index($nid) {
 function fuzzysearch_cleanse($text) {
   $text = strip_tags($text);
   $text = strtolower($text);
-  return preg_replace('%[^a-zA-Z0-9\s]%', '', $text);
+  return preg_replace('/['. PREG_CLASS_SEARCH_EXCLUDE . ']+/u', ' ', $text);
+}
+
+/**
+ * Helper function to split UTF8 characters
+ * Credits: posted on php.net by: www.yeap.lv
+ */
+function fuzzysearch_utf8_substr($str,$from,$len) {
+  return preg_replace('#^(?:[\x00-\x7F]|[\xC0-\xFF][\x80-\xBF]+){0,'.$from.'}'.
+                         '((?:[\x00-\x7F]|[\xC0-\xFF][\x80-\xBF]+){0,'.$len.'}).*#s',
+                         '$1',$str);
+}
+
+/**
+ * Helper function to count the proper length of UTF8 characters
+ * Credits: posted on php.net by anpaza@mail.ru
+ */
+function fuzzysearch_utf8_strlen($str) {
+  return preg_match_all('/[\x00-\x7F\xC0-\xFD]/', $str, $dummy);
 }
 
 
@@ -410,6 +493,39 @@ function fuzzysearch_index_queue($nid, $module) {
   // test this later, may need to use an update to check if the node is already called for indexing
   return db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
   
+}
+
+
+/**
+ * Process the search query
+ */
+function fuzzysearch_process($query) {
+
+  $nlength = variable_get('search_nlength', 3);
+
+  $words = explode(' ', $query);
+  foreach ($words as $k => $word) {
+    // TODO Change type of query based on boolean operators
+    $length = fuzzysearch_utf8_strlen($word);
+    if ($length > $nlength) {
+      for ($i=0; $i < $length - 2; $i++) { 
+//        $keys[] = truncate_utf8($word, $i, )
+        $keys[] = fuzzysearch_utf8_substr($word, $i, $nlength);
+      }
+    }
+    else{
+      $keys[] = $word;
+    }
+  }
+  drupal_set_message(print_r($keys, true));
+  $results = fuzzysearch_query($keys);
+  if ($results) {
+    $output .= theme('fuzzysearch_results', $results);
+  }
+  else {
+    $output .= '<p>Sorry no matches found.</p>';
+  }
+  return $output;
 }
 
 
@@ -445,46 +561,14 @@ function fuzzysearch_query($keys) {
 
 
 /**
- * Process the search query
- */
-function fuzzysearch_process($query) {
-
-  $nlength = variable_get('search_nlength', 3);
-
-  $words = explode(' ', $query);
-  foreach ($words as $k => $word) {
-    // TODO Change type of query based on boolean operators
-    $length = strlen($word);
-    if ($length > $nlength) {
-      for ($i=0; $i < $length - 2; $i++) { 
-        $keys[] = substr($word, $i, $nlength);
-      }
-    }
-    else{
-      $keys[] = $word;
-    }
-  }
-  
-  $results = fuzzysearch_query($keys);
-  if ($results) {
-    $output .= theme('fuzzysearch_results', $results);
-  }
-  else {
-    $output .= '<p>Sorry no matches found.</p>';
-  }
-  return $output;
-}
-
-
-/**
  * Form to search the index
  */
-function fuzzysearch_box_form($keys = '') {
+function fuzzysearch_box_form() {
   $form['#base'] = 'fuzzysearch_form';
   $form['keys'] = array(
     '#type' => 'textfield',
     '#size' => 15,
-    '#default_value' => $keys,
+    '#default_value' => '',
   );
   $form['submit'] = array(
     '#type' => 'submit',
