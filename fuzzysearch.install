@@ -13,7 +13,7 @@ function fuzzysearch_install() {
       db_query("CREATE TABLE search_fuzzy_index (
         id int(11) NOT NULL auto_increment,
         sid int(11) NOT NULL,
-        trigram varchar(6) NOT NULL,
+        trigram varchar(6) character set utf8 NOT NULL,
         completeness double NOT NULL,
         score decimal(8,2) NOT NULL,
         total decimal(8,2) NOT NULL,
@@ -26,16 +26,3 @@ function fuzzysearch_install() {
       break;
   }
 }
-
-// function fuzzysearch_update_1()
-//   $return = array()
-//   switch ($GLOBALS['db_type']){
-//     case 'mysql':
-//     case 'mysqli':
-//       $return[] = update_sql();
-//       break;
-//     case 'pgsql':
-//       break;
-//   }
-//   
-//   return $return;
