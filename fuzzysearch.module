@@ -509,7 +509,6 @@ function fuzzysearch_process($query) {
     $length = fuzzysearch_utf8_strlen($word);
     if ($length > $nlength) {
       for ($i=0; $i < $length - 2; $i++) { 
-//        $keys[] = truncate_utf8($word, $i, )
         $keys[] = fuzzysearch_utf8_substr($word, $i, $nlength);
       }
     }
@@ -517,7 +516,7 @@ function fuzzysearch_process($query) {
       $keys[] = $word;
     }
   }
-  drupal_set_message(print_r($keys, true));
+  
   $results = fuzzysearch_query($keys);
   if ($results) {
     $output .= theme('fuzzysearch_results', $results);
