@@ -631,6 +631,7 @@ function theme_fuzzysearch_form($form) {
  * Gather results from the index and build result page
  */
 function fuzzysearch_show_results($keys = '') {
+  drupal_set_title(check_plain($keys));
   drupal_add_css($base_path . drupal_get_path('module', 'fuzzysearch') .'/fuzzysearch.css', 'module');
   $output .= '<div class="clear-block">';
   $output .= drupal_get_form('fuzzysearch_form', $keys);
