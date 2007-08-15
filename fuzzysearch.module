@@ -168,7 +168,7 @@ function fuzzysearch_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
   switch ($op) {
     case 'update':
     case 'insert':
-      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $node->nid, 'node', time());
+      fuzzysearch_reindex($node->nid, 'fuzzysearch');
       break;
     case 'delete':
       db_query("DELETE FROM {search_fuzzy_index} WHERE sid = %d", $node->nid);
@@ -278,7 +278,10 @@ function fuzzysearch_search_score($op, $node) {
  * @param $module - name of the module flagging the node
  */
 function fuzzysearch_reindex($nid, $module) {
-  db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
+  $query = db_query("SELECT * FROM {search_index_queue} WHERE nid = %d", $nid);
+  if (!db_result($query)) {
+    db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
+  }
 }
 
 
