@@ -103,13 +103,13 @@ function fuzzysearch_admin_form() {
   
   $form['update'] = array(
     '#title' => t('Re-Index Site'),
-    '#description' => t('Check the box and click submit to re-index all nodes on the site during the next cron run'),
+    '#description' => t('Check the box and click submit to re-index all nodes on the site during the next cron run.'),
     '#type' => 'fieldset'
   );
   $form['update']['reindex'] = array(
     '#type' => 'checkbox',
     '#title' => 'Clear Index',
-    '#default_value' => false,
+    '#default_value' => false
   );
   
   $form['update']['nlength'] = array(
@@ -119,15 +119,23 @@ function fuzzysearch_admin_form() {
     '#options' => array(
       '3' => 3,
       '4' => 4,
-      '5' => 5,
+      '5' => 5
       ),
-    '#default_value' => variable_get('search_nlength', 3),
+    '#default_value' => variable_get('search_nlength', 3)
   );
   
-  $form['update']['submit'] = array(
+  $form['completeness'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Minimum Completeness'),
+    '#description' => t('Enter a decimal value between 0 and 1 to set the minimum match completeness in the returned results. (Higher is stricter. Does not require index update.)'),
+    '#default_value' => variable_get('search_min_completeness', .5),
+    '#weight' => 7
+  );
+  
+  $form['submit'] = array(
     '#type' => 'submit',
     '#value' => 'Submit',
-    '#weight' => 10,
+    '#weight' => 10
   );
 
   return $form;  
@@ -145,6 +153,7 @@ function fuzzysearch_admin_form_submit($form_id, $form_values) {
     drupal_set_message('Nodes ready for reindexing, please run cron to update the index.');
   }
   variable_set('search_nlength', $form_values['nlength']);
+  variable_set('search_min_completeness', $form_values['completeness']);
 }
 
 
@@ -388,7 +397,8 @@ function fuzzysearch_index($nid) {
     }
     else {
       $index_scores[$key] += 1;
-    }  }
+    }
+  }
 
   // Find all words located within tags (score > 1)
   preg_match_all('/<([A-Z][A-Z0-9]*)([^>]*)>(.*?)<\/\1>/i', $text, $tagged);
@@ -487,14 +497,87 @@ function fuzzysearch_utf8_strlen($str) {
 
 
 /**
- * Create a function for other modules to call to update a node's index
+ * API function for other modules to call for a node to be reindexed
  */
 function fuzzysearch_index_queue($nid, $module) {
-  // test this later, may need to use an update to check if the node is already called for indexing
   return db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
-  
 }
 
+/**
+ * Form to search the index
+ */
+function fuzzysearch_box_form() {
+  $form['#base'] = 'fuzzysearch_form';
+  $form['keys'] = array(
+    '#type' => 'textfield',
+    '#size' => 15,
+    '#default_value' => '',
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+  );
+  return $form;
+}
+
+/**
+ * Theme the output of the search block
+ */
+function theme_fuzzysearch_box_form($form) {
+  $output .= '<div class="container-inline">'. drupal_render($form['keys']) . drupal_render($form['submit']) .'</div>';
+  $output .= drupal_render($form);
+  return $output;
+}
+
+/**
+ * Implementation of hook_block().
+ */
+function fuzzysearch_block($op = 'list', $delta = 0) {
+  if ($op == 'list') {
+    $blocks[0]['info'] = t('Fuzzy search form');
+    return $blocks;
+  }
+  else if ($op == 'view' && user_access('fuzzysearch content')) {
+    $block['content'] = drupal_get_form('fuzzysearch_box_form');
+    $block['subject'] = t('Search');
+    return $block;
+  }
+}
+
+/**
+ * Form to search the index
+ */
+function fuzzysearch_form($keys = '') {
+  $form['keys'] = array(
+    '#title' => t('Enter search phrase'),
+    '#type' => 'textfield',
+    '#size' => 35,
+    '#default_value' => $keys,
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+  );
+  return $form;
+}
+
+/**
+ * Redirect the search terms to the result callback and
+ * provide the keys as part of the path so that the search
+ * can be linked to.
+ */
+function fuzzysearch_form_submit($form_id, $form_values) {
+  drupal_goto('fuzzysearch/results/'. check_plain(trim($form_values['keys'])));
+}
+
+/**
+ * Output formatting for the search form
+ */
+function theme_fuzzysearch_form($form) {
+  $output .= '<div class="search-form">'. drupal_render($form['keys']) . drupal_render($form['submit']) .'</div>';
+  $output .= drupal_render($form);
+  return $output;
+}
 
 /**
  * Process the search query
@@ -541,90 +624,17 @@ function fuzzysearch_query($keys) {
       $clause .= ' OR';
     }
   }
-
-  $query = db_query("SELECT sid, SUM(score) score, SUM(completeness) completeness, SUM(total) total, n.title, nr.teaser FROM {search_fuzzy_index} f LEFT JOIN {node} n ON (n.nid = f.sid) LEFT JOIN {node_revisions} nr ON (n.vid = nr.vid) WHERE $clause GROUP BY sid ORDER BY score DESC");
-
+  // TODO: Fix the minimum completeness so that a single qgram match doesn't necessarily return a match
+  $min_completeness = variable_get('search_min_completeness', .5);
+  $query = db_query("SELECT sid, SUM(score) score, SUM(completeness) completeness, SUM(total) total FROM {search_fuzzy_index} WHERE $clause GROUP BY sid HAVING completeness > %f ORDER BY score DESC", $min_completeness);
   while ($row = db_fetch_array($query)) {
-    $results[] = array(
-      'nid' => $row['sid'],
-      'title' => $row['title'],
-      'score' => $row['score'],
-      'completeness' => $row['completeness'],
-      'total' => $row['total'],
-      'teaser' => $row['teaser'],
-    );
+    $node = node_load($row['sid']);
+    // Make sure that the user has access to the returned results
+    if (node_access('view', $node)) {
+      $results[] = $node;
+    }
   }
-  
   return $results;
-}
-
-
-/**
- * Form to search the index
- */
-function fuzzysearch_box_form() {
-  $form['#base'] = 'fuzzysearch_form';
-  $form['keys'] = array(
-    '#type' => 'textfield',
-    '#size' => 15,
-    '#default_value' => '',
-  );
-  $form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => t('Search'),
-  );
-  return $form;
-}
-
-function theme_fuzzysearch_box_form($form) {
-  $output .= '<div class="container-inline">'. drupal_render($form['keys']) . drupal_render($form['submit']) .'</div>';
-  $output .= drupal_render($form);
-  return $output;
-}
-/**
- * Implementation of hook_block().
- */
-function fuzzysearch_block($op = 'list', $delta = 0) {
-  if ($op == 'list') {
-    $blocks[0]['info'] = t('Fuzzy search form');
-    return $blocks;
-  }
-  else if ($op == 'view' && user_access('fuzzysearch content')) {
-    $block['content'] = drupal_get_form('fuzzysearch_box_form');
-    $block['subject'] = t('Search');
-    return $block;
-  }
-}
-
-
-/**
- * Form to search the index
- */
-function fuzzysearch_form($keys = '') {
-  $form['keys'] = array(
-    '#title' => t('Enter search phrase'),
-    '#type' => 'textfield',
-    '#size' => 35,
-    '#default_value' => $keys,
-  );
-  $form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => t('Search'),
-  );
-  return $form;
-}
-
-function fuzzysearch_form_submit($form_id, $form_values) {
-  drupal_goto('fuzzysearch/results/'. check_plain(trim($form_values['keys'])));
-}
-
-/**
- * Output formatting for the search form
- */
-function theme_fuzzysearch_form($form) {
-  $output .= '<div class="search-form">'. drupal_render($form['keys']) . drupal_render($form['submit']) .'</div>';
-  $output .= drupal_render($form);
-  return $output;
 }
 
 /**
@@ -641,9 +651,8 @@ function fuzzysearch_show_results($keys = '') {
 }
 
 /**
- * Theme the results from the index
+ * Theme the search results
  */
-
 function theme_fuzzysearch_results($results) {
   $output .= '<div class="box">';
   $output .= '<h2>'. t('Search Results') .'</h2>'; 
@@ -652,9 +661,9 @@ function theme_fuzzysearch_results($results) {
     $i++;
     $odd = $i%2 ? 'odd' : 'even';
     //$node = node_load($result['nid']);
-    $output .= '<dt class="title">'. l(t($result['title']), 'node/'. $result['nid']) .'</dt>';
+    $output .= '<dt class="title">'. l(t($result->title), 'node/'. $result->nid) .'</dt>';
     $output .= '<dd>';
-    $output .= '<p>'. strip_tags($result['teaser']) .'</p>';
+    $output .= '<p>'. $result->teaser .'</p>';
     $output .= '</dd>';
   }
   $output .= '</dl></div>';
