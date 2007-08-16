@@ -5,8 +5,8 @@ function fuzzysearch_install() {
     case 'mysql':
     case 'mysqli':  
       db_query("CREATE TABLE search_index_queue (
-        nid INT NOT NULL AUTO_INCREMENT PRIMARY KEY ,
-        module VARCHAR( 60 ) NOT NULL ,
+        nid INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        module VARCHAR( 60 ) NOT NULL,
         timestamp INT( 11 ) NOT NULL
       )");
       
@@ -25,4 +25,12 @@ function fuzzysearch_install() {
     
       break;
   }
+  
+  // Queue all content for indexing
+  $query = db_query("SELECT nid FROM {node}");
+  while ($row = db_fetch_object($query)) {
+    fuzzysearch_reindex($row->nid, 'fuzzysearch');
+  }
+  drupal_set_message('Fuzzysearch Module Installed Successfully.');
+  drupal_set_message('Content queued for indexing, please run cron to begin indexing.');
 }
