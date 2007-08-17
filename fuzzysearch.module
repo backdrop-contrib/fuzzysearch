@@ -124,14 +124,6 @@ function fuzzysearch_admin_form() {
     '#default_value' => variable_get('search_nlength', 3)
   );
   
-  $form['completeness'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Minimum Completeness'),
-    '#description' => t('Enter a decimal value between 0 and 1 to set the minimum match completeness in the returned results. (Higher is stricter. Does not require index update.)'),
-    '#default_value' => variable_get('search_min_completeness', .5),
-    '#weight' => 7
-  );
-  
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => 'Submit',
@@ -153,7 +145,6 @@ function fuzzysearch_admin_form_submit($form_id, $form_values) {
     drupal_set_message('Nodes ready for reindexing, please run cron to update the index.');
   }
   variable_set('search_nlength', $form_values['nlength']);
-  variable_set('search_min_completeness', $form_values['completeness']);
 }
 
 
@@ -329,6 +320,8 @@ function fuzzysearch_index($nid) {
       $text .= ' '.$content;
     }
   }
+  
+  module_invoke_all('fuzzysearch_preprocess', & $text);
   
   // TODO Fix cck inputs
   // Gather CCK text fields and insert that data into index
@@ -602,24 +595,7 @@ function fuzzysearch_process($query) {
       $keys[] = $word;
     }
   }
-  
-  $results = fuzzysearch_query($keys);
-  if ($results) {
-    $output .= theme('fuzzysearch_results', $results);
-  }
-  else {
-    $output .= '<p>Sorry no matches found.</p>';
-  }
-  return $output;
-}
 
-
-/**
- * Deconstruct the search query to determine type and then
- * build the sql query to return relevant results
- *
- */
-function fuzzysearch_query($keys) {
   $length = count($keys);
   for ($i=0; $i < $length; $i++) { 
     $clause .= " trigram = '". $keys[$i] ."'";
@@ -627,17 +603,23 @@ function fuzzysearch_query($keys) {
       $clause .= ' OR';
     }
   }
+
   // TODO: Fix the minimum completeness so that a single qgram match doesn't necessarily return a match
   $min_completeness = variable_get('search_min_completeness', .5);
-  $query = db_query("SELECT sid, SUM(score) score, SUM(completeness) completeness, SUM(total) total FROM {search_fuzzy_index} WHERE $clause GROUP BY sid HAVING completeness > %f ORDER BY score DESC", $min_completeness);
-  while ($row = db_fetch_array($query)) {
-    $node = node_load($row['sid']);
-    // Make sure that the user has access to the returned results
-    if (node_access('view', $node)) {
-      $results[] = $node;
-    }
+
+  $query = pager_query(db_rewrite_sql("SELECT sid, SUM(total) total FROM {search_fuzzy_index} s LEFT JOIN {node} n ON (n.nid = s.sid) WHERE $clause GROUP BY sid ORDER BY score DESC"), 10, 0, "SELECT COUNT(DISTINCT(sid)) FROM {search_fuzzy_index} WHERE $clause");
+  while ($row = db_fetch_object($query)) {
+    $node = node_load($row->sid);
+    $results[] = $node;
   }
-  return $results;
+  if ($results) {
+    $output .= theme('fuzzysearch_results', $results);
+    $output .= theme('pager', NULL, 10);
+  }
+  else {
+    $output = '<p>'. t('Sorry no matches were found.') .'</p>';
+  }
+  return $output;
 }
 
 /**
@@ -649,7 +631,7 @@ function fuzzysearch_show_results($keys = '') {
   $output .= '<div class="clear-block">';
   $output .= drupal_get_form('fuzzysearch_form', $keys);
   $output .= '</div>';
-  $output .= fuzzysearch_process($keys);    
+  $output .= fuzzysearch_process($keys); 
   return $output;
 }
 
@@ -663,7 +645,6 @@ function theme_fuzzysearch_results($results) {
   foreach ($results as $result) {
     $i++;
     $odd = $i%2 ? 'odd' : 'even';
-    //$node = node_load($result['nid']);
     $output .= '<dt class="title">'. l(t($result->title), 'node/'. $result->nid) .'</dt>';
     $output .= '<dd>';
     $output .= '<p>'. $result->teaser .'</p>';
