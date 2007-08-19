@@ -29,7 +29,10 @@ function fuzzysearch_install() {
   // Queue all content for indexing
   $query = db_query("SELECT nid FROM {node}");
   while ($row = db_fetch_object($query)) {
-    fuzzysearch_reindex($row->nid, 'fuzzysearch');
+    $query = db_query("SELECT * FROM {search_index_queue} WHERE nid = %d", $row->nid);
+    if (!db_result($query)) {
+      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $row->nid, 'fuzzysearch', time());
+    }
   }
   drupal_set_message('Fuzzysearch Module Installed Successfully.');
   drupal_set_message('Content queued for indexing, please run cron to begin indexing.');

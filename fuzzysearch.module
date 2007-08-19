@@ -493,13 +493,6 @@ function fuzzysearch_utf8_strlen($str) {
 
 
 /**
- * API function for other modules to call for a node to be reindexed
- */
-function fuzzysearch_index_queue($nid, $module) {
-  return db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $nid, $module, time());
-}
-
-/**
  * Form to search the index
  */
 function fuzzysearch_box_form() {
