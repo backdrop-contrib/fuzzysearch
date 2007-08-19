@@ -102,29 +102,32 @@ function fuzzysearch_admin() {
 function fuzzysearch_admin_form() {
   
   $form['update'] = array(
-    '#title' => t('Re-Index Site'),
-    '#description' => t('Check the box and click submit to re-index all nodes on the site during the next cron run.'),
+    '#title' => t('Fuzzy Search Settings'),
     '#type' => 'fieldset'
   );
   $form['update']['reindex'] = array(
     '#type' => 'checkbox',
     '#title' => 'Clear Index',
+    '#description' => t('Check the box and click submit to re-index all nodes on the site during the next cron run.'),
     '#default_value' => false
   );
   
-  $form['update']['nlength'] = array(
-    '#type' => 'select',
-    '#title' => t('N-Length'),
-    '#description' => t('Choose the length of the qgrams for indexing. (Requires Re-Indexing)'),
-    '#options' => array(
-      '3' => 3,
-      '4' => 4,
-      '5' => 5
-      ),
-    '#default_value' => variable_get('search_nlength', 3)
+  $form['update']['debug_score'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Display Scoring'),
+    '#description' => t('If selected, the completeness and score of the results will be shown below each result'),
+    '#default_value' => variable_get('search_debug_score', false)
   );
   
-  $form['submit'] = array(
+  $form['update']['completeness'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Minimum Completeness'),
+    '#description' => t('Enter  value between 0 and 100) to set the minimum match completeness percent required in the returned results.'),
+    '#default_value' => variable_get('search_min_completeness', 40),
+    '#weight' => 7
+  );
+  
+  $form['update']['submit'] = array(
     '#type' => 'submit',
     '#value' => 'Submit',
     '#weight' => 10
@@ -135,7 +138,7 @@ function fuzzysearch_admin_form() {
 
 function fuzzysearch_admin_form_submit($form_id, $form_values) {
   if ($form_values['reindex']) {
-    // Delete all nodes to be queued so we can readd all of them
+    // Delete all nodes to be queued so we can read all of them
     db_query("DELETE FROM {search_index_queue}");
     
     $query = db_query("SELECT nid FROM {node}");
@@ -144,7 +147,8 @@ function fuzzysearch_admin_form_submit($form_id, $form_values) {
     }
     drupal_set_message('Nodes ready for reindexing, please run cron to update the index.');
   }
-  variable_set('search_nlength', $form_values['nlength']);
+  variable_set('search_min_completeness', $form_values['completeness']);
+  variable_set('search_debug_score', $form_values['debug_score']);
 }
 
 
@@ -162,7 +166,7 @@ function fuzzysearch_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
       fuzzysearch_reindex($node->nid, 'fuzzysearch');
       break;
     case 'delete':
-      db_query("DELETE FROM {search_fuzzy_index} WHERE sid = %d", $node->nid);
+      db_query("DELETE FROM {search_fuzzy_index} WHERE nid = %d", $node->nid);
       break;
   }
 }
@@ -231,37 +235,6 @@ function fuzzysearch_scoring_submit($form_id, $form_values) {
   drupal_set_message('Score factor multipliers have been updated');
 }
 
-
-
-/**
- * Implementation of hook_search_score
- * @param $op - 'scoring' returns array with informationa about the module (seen in the admin settings form)
- *            - 'index' returns a score modifier to the node being indexed
- */
-
-function fuzzysearch_search_score($op, $node) {
-  switch ($op) {
-    case 'settings':
-      $info[] = array(
-        'id' => 'fuzzysearch',
-        'title' => 'Fuzzysearch',
-        'description' => 'This score factor depends on how fuzzy something is',
-      );
-      return $info;
-    case 'index':
-      // do some processing to figure out what score to bring back
-      // the node variable is avaiable for this processing
-      $score = 5;
-      // setup an array with matching title in the scoring 'op' so that proper score
-      // multipliers can be set cor this score modifier
-      $scores[] = array(
-        'id' => 'fuzzysearch',
-        'score' => $score,
-      );
-      return $scores;
-  }
-}
-
 /**
  * Provide an external API function that allows modules to flag a node for reindexing
  *
@@ -303,7 +276,7 @@ function fuzzysearch_cron() {
 function fuzzysearch_index($nid) {
   
   // First step is removing past index
-  db_query("DELETE FROM {search_fuzzy_index} WHERE sid = %d", $nid);
+  db_query("DELETE FROM {search_fuzzy_index} WHERE nid = %d", $nid);
   
   $node = node_load($nid);
   
@@ -343,25 +316,25 @@ function fuzzysearch_index($nid) {
   
   // Multipliers for scores of words inside certain HTML tags.
   // Note: 'a' must be included for link ranking to work.
-  $tags = array('h1' => 25,
-                'h2' => 18,
-                'h3' => 15,
-                'h4' => 12,
-                'h5' => 9,
-                'h6' => 6,
-                'u' => 3,
-                'b' => 3,
-                'i' => 3,
-                'strong' => 3,
-                'em' => 3,
-                'a' => 10);
+  $tags = array('h1' => 10,
+                'h2' => 9,
+                'h3' => 8,
+                'h4' => 7,
+                'h5' => 6,
+                'h6' => 5,
+                'u' => 2,
+                'b' => 2,
+                'i' => 2,
+                'strong' => 2,
+                'em' => 2,
+                'a' => 5);
   
   // Strip off all ignored tags to speed up processing
   $text = strip_tags($text, '<'. implode('><', array_keys($tags)) .'>');
 
   // Strip all stop words if stop words are enabled
   if (variable_get('search_stop_words', false)) {
-    //  $text = str_replace()
+    module_invoke_all('search_filter', &$text);
   }
   
   //  Allow other modules to modify the score of the node based on each owns calculations
@@ -419,7 +392,10 @@ function fuzzysearch_index($nid) {
   }  
 
   foreach ($index_words as $key => $word) {
-    fuzzysearch_index_insert($word, $nid, $index_scores[$key], $hook_score);
+    // ensure that as each word is indexed it receives a unique id 
+    // independent of the node it is in.
+    $word_id = db_next_id("{search_fuzzy_index}_word_id");
+    fuzzysearch_index_insert($word, $word_id, $nid, $index_scores[$key], $hook_score);
   }
 
   // Update the node table to make indexed = 1;
@@ -433,34 +409,32 @@ function fuzzysearch_index($nid) {
  * @param $word_score: score given to the word based on the tag it is in
  * @param $node_score: score modifier given to the node from hook_search_score
  */
-function fuzzysearch_index_insert($word, $nid, $word_score, $node_score){
+function fuzzysearch_index_insert($word, $word_id, $nid, $word_score, $node_score){
   $length = fuzzysearch_utf8_strlen($word);
   $nlength = variable_get('search_nlength', 3);
   //  Ensure that having all score modifiers set to 0 will not affect our natural scoring
   if ($node_score > 0) {
-    $total_score = $word_score * $node_score;          
+    $score = $word_score * $node_score;          
   } 
   else {
-    $total_score = $word_score;
+    $score = $word_score;
   }
     
   if ($length > $nlength) {
     //  Calculate how complete the ngram is compared to the length of the word
-    $completeness = 1 / ($length - $nlength + 1);
-    $total = $total * $completeness;
+    $completeness = 100 / ($length - $nlength + 1);
     //  Create ngrams and index them
     for ($i=0; $i < ($length - $nlength + 1); $i++) {
-      db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
-        $nid, fuzzysearch_utf8_substr($word, $i, $nlength), $completeness, $word_score, $total_score);
+      db_query("INSERT INTO {search_fuzzy_index} (nid, word_id, ngram, completeness, score) VALUES (%d, %d, '%s', %f, %f)",
+        $nid, $word_id, fuzzysearch_utf8_substr($word, $i, $nlength), $completeness, $score);
     }
   }
   else {
     //  The ngram is the same length as the actual word so it is complete
-    $completeness = 1;
-    $total = $completeness * $total;
+    $completeness = 100;
     //  Index the ngram
-    db_query("INSERT INTO {search_fuzzy_index} (sid, trigram, completeness, score, total) VALUES (%d, '%s', %f, %f, %f)",
-      $nid, $word, $completeness, $word_score, $total_score);
+    db_query("INSERT INTO {search_fuzzy_index} (nid, word_id, ngram, completeness, score) VALUES (%d, %d, '%s', %f, %f)",
+      $nid, $word_id, $word, $completeness, $score);
   }
 }
 
@@ -572,7 +546,11 @@ function theme_fuzzysearch_form($form) {
  * Process the search query
  */
 function fuzzysearch_process($query) {
-
+  global $user;
+  // if no keys were entered do not display anything below the search form
+  if(!$query){
+    return;
+  }
   $nlength = variable_get('search_nlength', 3);
 
   $words = explode(' ', $query);
@@ -580,29 +558,52 @@ function fuzzysearch_process($query) {
     // TODO Change type of query based on boolean operators
     $length = fuzzysearch_utf8_strlen($word);
     if ($length > $nlength) {
+      // Determine lengths which we want to search for
+      if ($length > 3) {
+        // 5 letter word matches down to 4 letter words
+        $comp = 1 / (4 - $nlength + 1);
+      }
+      if ($length > 5) {
+        // 6 and 7 letter words match down to 5 letter words
+        $comp = 1 / (5 - $nlength + 1);
+      }
+      if ($length > 7) {
+        // anything larger matches down 2 letters than its own length
+        $comp = 1 / ($length - 2 - $nlength + 1);
+      }
+      $comp = number_format($comp + .001, 3) * 100;
       for ($i=0; $i < $length - 2; $i++) { 
-        $keys[] = fuzzysearch_utf8_substr($word, $i, $nlength);
+        $clause .= " (ngram = '". fuzzysearch_utf8_substr($word, $i, $nlength) ."' AND completeness <". $comp .") OR";
+//        $keys[] = fuzzysearch_utf8_substr($word, $i, $nlength);
       }
     }
     else{
-      $keys[] = $word;
+      $clause .= " ngram = '". $word ."' OR";
     }
   }
 
-  $length = count($keys);
-  for ($i=0; $i < $length; $i++) { 
-    $clause .= " trigram = '". $keys[$i] ."'";
-    if ($i != $length - 1) {
-      $clause .= ' OR';
-    }
-  }
+  $clause = preg_replace("/ OR$/", '', $clause);
+
+  // $length = count($keys);
+  // for ($i=0; $i < $length; $i++) { 
+  //   $clause .= " ngram = '". $keys[$i] ."'";
+  //   if ($i != $length - 1) {
+  //     $clause .= ' OR';
+  //   }
+  // }
 
   // TODO: Fix the minimum completeness so that a single qgram match doesn't necessarily return a match
-  $min_completeness = variable_get('search_min_completeness', .5);
-
-  $query = pager_query(db_rewrite_sql("SELECT sid, SUM(total) total FROM {search_fuzzy_index} s LEFT JOIN {node} n ON (n.nid = s.sid) WHERE $clause GROUP BY sid ORDER BY score DESC"), 10, 0, "SELECT COUNT(DISTINCT(sid)) FROM {search_fuzzy_index} WHERE $clause");
+  $min_completeness = check_plain(variable_get('search_min_completeness', 40));
+//  if($user->uid == 1){
+    $query = pager_query(db_rewrite_sql("SELECT n.nid, SUM(percent) AS completeness, SUM(score) AS score FROM (SELECT n.nid, SUM(completeness) percent, SUM(score) score FROM {search_fuzzy_index} AS s LEFT JOIN {node} AS n ON (n.nid = s.nid) WHERE (($clause) AND n.status = 1) GROUP BY word_id HAVING percent > $min_completeness) AS n GROUP BY n.nid ORDER BY completeness DESC, score DESC"), 10, 0, "SELECT COUNT(DISTINCT(n.nid)) FROM (SELECT n.nid, CEILING(SUM(completeness)) completeness, SUM(score) score FROM {search_fuzzy_index} AS n WHERE $clause GROUP BY word_id HAVING SUM(completeness) > $min_completeness ORDER BY completeness DESC, score DESC) AS n");
+  // }
+  // else {
+  //   $query = pager_query(db_rewrite_sql("SELECT n.nid, CEILING(SUM(completeness)) AS completeness, SUM(score) AS score FROM ((SELECT n.nid, SUM(completeness) completeness, SUM(score) score FROM {search_fuzzy_index} AS n WHERE $clause GROUP BY word_id HAVING SUM(completeness) > $min_completeness ORDER BY completeness DESC, score DESC) AS n GROUP BY n.nid ORDER BY CEILING(SUM(completeness)) DESC, score DESC"), 10, 0, "SELECT COUNT(DISTINCT(n.nid)) FROM (SELECT n.nid, CEILING(SUM(completeness)) completeness, SUM(score) score FROM {search_fuzzy_index} AS n WHERE $clause GROUP BY word_id HAVING SUM(completeness) > $min_completeness ORDER BY completeness DESC, score DESC) AS n");    
+  // }
   while ($row = db_fetch_object($query)) {
-    $node = node_load($row->sid);
+    $node = node_load($row->nid);
+    $node->score = $row->score;
+    $node->completeness = $row->completeness;
     $results[] = $node;
   }
   if ($results) {
@@ -641,6 +642,9 @@ function theme_fuzzysearch_results($results) {
     $output .= '<dt class="title">'. l(t($result->title), 'node/'. $result->nid) .'</dt>';
     $output .= '<dd>';
     $output .= '<p>'. $result->teaser .'</p>';
+    if (variable_get('search_debug_score', false)) {
+      $output .= '<p>Completeness: '. $result->completeness .' Score: '. $result->score .'</p>';
+    }
     $output .= '</dd>';
   }
   $output .= '</dl></div>';

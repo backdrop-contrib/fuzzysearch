@@ -12,28 +12,42 @@ function fuzzysearch_install() {
       
       db_query("CREATE TABLE {search_fuzzy_index} (
         id int(11) NOT NULL auto_increment,
-        sid int(11) NOT NULL,
-        trigram varchar(6) character set utf8 NOT NULL,
+        nid int(11) NOT NULL,
+        word_id int(11) NOT NULL,
+        ngram varchar(6) character set utf8 NOT NULL,
         completeness double NOT NULL,
         score decimal(8,2) NOT NULL,
-        total decimal(8,2) NOT NULL,
         PRIMARY KEY  (`id`)
       )");
       
       break;
     case 'pgsql':
-    
+    // TODO insert postgres table creation
       break;
   }
   
   // Queue all content for indexing
   $query = db_query("SELECT nid FROM {node}");
   while ($row = db_fetch_object($query)) {
-    $query = db_query("SELECT * FROM {search_index_queue} WHERE nid = %d", $row->nid);
-    if (!db_result($query)) {
-      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $row->nid, 'fuzzysearch', time());
+    $queue = db_query("SELECT * FROM {search_index_queue} WHERE nid = %d", $row->nid);
+    if (!db_result($queue)) {
+      db_query("INSERT INTO {search_index_queue} (nid, module, timestamp) VALUES (%d, '%s', %d)", $row->nid, $module, time());
     }
   }
   drupal_set_message('Fuzzysearch Module Installed Successfully.');
   drupal_set_message('Content queued for indexing, please run cron to begin indexing.');
+  variable_set('search_nlength', 3);  
+}
+
+function fuzzysearch_uninstall() {
+  switch($GLOBALS['db_type']) {
+    case 'mysql':
+    case 'mysqli':
+      db_query("DROP TABLE IF EXISTS {search_index_queue}, {search_fuzzy_index}");
+      break;
+    case 'pgsql':
+    // TODO insert postgres table removal
+      break;
+  }
+  drupal_set_message('Fuzzy Search Module successfully removed');
 }
