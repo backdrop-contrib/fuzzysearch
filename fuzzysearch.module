@@ -296,24 +296,6 @@ function fuzzysearch_index($nid) {
   
   module_invoke_all('fuzzysearch_preprocess', & $text);
   
-  // TODO Fix cck inputs
-  // Gather CCK text fields and insert that data into index
-  if (module_exists('content')) {
-    $fields = content_fields(NULL, $node->type);
-    // Gather the data from each of the text inputs from CCK that are enabled for this
-    // node type
-    foreach ($fields as $key => $field) {
-      if ($field['type'] == 'text' && $field['type_name'] == $node->type) {
-        foreach ($node->$key as $index => $value) {
-          if ($value['value'] != '') {
-            $text .= ' '. $value['value'];            
-          }
-        }
-      }
-    } // end field foreach
-  } // end cck data gathering
-  
-  
   // Multipliers for scores of words inside certain HTML tags.
   // Note: 'a' must be included for link ranking to work.
   $tags = array('h1' => 10,

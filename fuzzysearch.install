@@ -11,13 +11,12 @@ function fuzzysearch_install() {
       )");
       
       db_query("CREATE TABLE {search_fuzzy_index} (
-        id int(11) NOT NULL auto_increment,
+        id int(11) NOT NULL AUTO_IMCREMENT PRIMARY KEY,
         nid int(11) NOT NULL,
         word_id int(11) NOT NULL,
         ngram varchar(6) character set utf8 NOT NULL,
         completeness double NOT NULL,
         score decimal(8,2) NOT NULL,
-        PRIMARY KEY  (`id`)
       )");
       
       break;
