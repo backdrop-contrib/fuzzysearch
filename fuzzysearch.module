@@ -294,7 +294,7 @@ function fuzzysearch_index($nid) {
     }
   }
   
-  module_invoke_all('fuzzysearch_preprocess', & $text);
+  // Insert code to allow other modules to filter indexed text before indexing
   
   // Multipliers for scores of words inside certain HTML tags.
   // Note: 'a' must be included for link ranking to work.
