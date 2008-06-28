@@ -1,7 +1,9 @@
-															Fuzzy Search Module Read Me
+									Fuzzy Search Module Read Me
+Project Home: http://drupal.org/project/fuzzysearch
+
 
 === Installation ===
-- The following installation steps assume your drupal installation is located at http://example.com
+- The following installation steps assume your drupal installation is located at http://example.com with clean urls turned on.
 
 To install this module simply:
 1. Download the latest stable release from the projects page: http://drupal.org/project/fuzzysearch.

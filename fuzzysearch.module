@@ -258,7 +258,7 @@ function fuzzysearch_reindex($nid, $module) {
  * timestamp
  */
 function fuzzysearch_cron() {
-  $query = db_query("SELECT nid FROM {search_index_queue}");
+  $query = db_query("SELECT nid FROM {search_index_queue} LIMIT 0, 150");
   while ($result = db_fetch_object($query)) {
     fuzzysearch_index($result->nid);
   }
