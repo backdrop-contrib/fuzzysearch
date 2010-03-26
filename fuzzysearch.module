@@ -201,6 +201,14 @@ function fuzzysearch_admin_form() {
     '#description' => t('Enter value between 0 and 100) to set the minimum match completeness percent required in the returned results.'),
     '#default_value' => variable_get('fuzzysearch_min_completeness', 40),
   );
+  $form['update']['spelling'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Minimum spelling score'),
+    '#size' => 3,
+    '#maxlength' => 3,
+    '#description' => t('Fuzzysearch tries to highlight search terms that may be misspelled. You can set the minimum threshold, which is calculated as a ratio of ngram hits minus misses to total number of ngrams in a term. 0 may cause a misspelling to highlight everything, and 100 will only highlight exact terms. Enter value between 0 and 100. Changing this setting does not require reindexing.'),
+    '#default_value' => variable_get('fuzzysearch_spelling', 30),
+  );
   $form['update']['ngram_length'] = array(
     '#type' => 'textfield',
     '#title' => t('Ngram length'),
@@ -231,7 +239,10 @@ function fuzzysearch_admin_form_validate($form, &$form_state) {
   }
   if (!is_numeric($form_state['values']['completeness'])) {
     form_set_error('completeness', t('Minimum match completeness must be an integer.'));
-}
+  }
+  if (!is_numeric($form_state['values']['spelling'])) {
+    form_set_error('completeness', t('Minimum spelling score must be an integer.'));
+  }
 }
 
 function fuzzysearch_admin_form_submit($form, &$form_state) {
@@ -246,6 +257,7 @@ function fuzzysearch_admin_form_submit($form, &$form_state) {
     }
     drupal_set_message('Nodes ready for reindexing, please run cron to update the index.');
   }
+  variable_set('fuzzysearch_spelling', $form_state['values']['spelling']);
   variable_set('fuzzysearch_min_completeness', $form_state['values']['completeness']);
   variable_set('fuzzysearch_debug_score', $form_state['values']['debug_score']);
   variable_set('fuzzysearch_nodetypes', $form_state['values']['nodetypes']);
@@ -475,7 +487,8 @@ function fuzzysearch_index($nid) {
 
 /**
  * Insert the words into the database as they are indexed.
- * @param $word
+ *
+ *  @param $word
  *   Word to insert into the index.
  * @param $nid
  *   The node id that is to be associated with this word.
@@ -668,15 +681,18 @@ function fuzzysearch_process($query, $theme = 'node', $limit = NULL) {
   }
   // Sanitize query because it can be submitted from url as well as form.
   $query = check_plain($query);
+
   // Run through stop words on output.?
   $query = _fuzzysearch_stop_words(str_replace('\'', '', $query));
   $nlength = variable_get('fuzzysearch_ngram_length', 3);
+  $min_spelling = variable_get('fuzzysearch_spelling', 30);
   $boundary = '(?:(?<=['. PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK .'])|(?=['. PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK .']))';
   $words = explode(' ', $query);
+
+  // Build the WHERE clause for the ngrams.
   foreach ($words as $k => $word) {
     // @todo Change type of query based on boolean operators
     $length = fuzzysearch_utf8_strlen($word);
-
     if ($length > $nlength) {
       // Determine lengths which we want to search for
       if ($length > 3) {
@@ -694,9 +710,10 @@ function fuzzysearch_process($query, $theme = 'node', $limit = NULL) {
       $comp = number_format($comp + .001, 3) * 100;
       for ($i=0; $i < $length - 2; $i++) {
         $clause .= " (ngram = '". fuzzysearch_utf8_substr($word, $i, $nlength) ."' AND completeness <". $comp .") OR";
-        //        $keys[] = fuzzysearch_utf8_substr($word, $i, $nlength);
       }
     }
+
+    // Words as long as ngrams length are inserted as is.
     else {
       $clause .= " ngram = '". $word ."' OR";
     }
@@ -710,16 +727,20 @@ function fuzzysearch_process($query, $theme = 'node', $limit = NULL) {
   // Set limit if not NULL.
   $limit_sql = $limit ? 'LIMIT '. $limit : '';
   $limit = $limit ? $limit : 10;
+
   // Get content types to exclude from results. They are still indexed. Check
   // for empty types in case no types have been exclude or admin form not saved.
   $types = array_filter(variable_get('fuzzysearch_nodetypes', array('')));
+
+  // Build the query args and placeholders.
   $args = $types = !empty($types) ? $types : array('');
   $args[] = $min_completeness;
   $placeholders = db_placeholders($types, 'text');
 
+  // Main query
   $sql = "
-    SELECT n.nid, n.type, SUM(percent) AS completeness,
-    SUM(score) AS score FROM (SELECT n.nid, n.type, SUM(completeness) percent, SUM(score) score
+    SELECT *, n.nid, n.type, SUM(percent) AS completeness,
+    SUM(score) AS score FROM (SELECT n.nid, n.type, s.ngram, SUM(completeness) percent, SUM(score) score
     FROM {fuzzysearch_index} AS s
     LEFT JOIN {node} AS n ON (n.nid = s.nid)
     WHERE (($clause) AND n.status = 1
@@ -739,26 +760,97 @@ function fuzzysearch_process($query, $theme = 'node', $limit = NULL) {
 
   $sql = db_rewrite_sql($sql);
   $sql_count = db_rewrite_sql($sql_count);
-  $query = pager_query($sql, $limit, 0, $sqlcount, $args);
+  $pager_results = pager_query($sql, $limit, 0, $sqlcount, $args);
 
-  while ($row = db_fetch_object($query)) {
+  // Load the matched nodes.
+  while ($row = db_fetch_object($pager_results)) {
     $node = node_load($row->nid);
     $node->score = $row->score;
     $node->completeness = $row->completeness;
+
+    // Query the matched nodes for the search ngrams. We use this for fuzzy
+    // highlighting of misspelled words. We do this per node to narrow
+    // the possible false ngrams when a misspelled ngram matches a real one.
+    // This could still return some false ngrams, but that's why it's fuzzy.
+    $sql_ngrams = "
+    SELECT s.ngram
+    FROM {fuzzysearch_index} s
+    LEFT JOIN {node} n ON (n.nid = s.nid)
+    WHERE (($clause) AND n.nid = $row->nid AND n.status = 1
+    AND n.type NOT IN ($placeholders))";
+
+    $ngrams = db_query($sql_ngrams, $args);
+    $clean_grams = array();
+    while ($ngram = db_fetch_object($ngrams)) {
+      $clean_grams[] = $ngram->ngram;
+    }
+    // Ngrams can occur multiple times, so filter.
+    $clean_grams =  array_unique($clean_grams);
+
+    // This will hold our search terms.
+    $clean_words = explode(' ', $query);
+
+    // Now we rebuild the words stripping out misspelled ngrams.
+    foreach ($clean_words as $key => $clean_word) {
+      $pos = array();
+      $len = strlen($clean_word);
+      // Get the position of each good hit.
+      foreach ($clean_grams as $n => $gram) {
+        if (stripos($clean_word, $gram) !== FALSE) {
+          $pos[stripos($clean_word, $gram)] = $gram;
+        }
+      }
+      ksort($pos);
+
+      // Start with a dummy word at the right length.
+      $newword = str_pad('', $len, '.');
+      $hits = $misses = 0;
+
+      // Check character by character for ngram matches. We don't need to check
+      // beyond the last $nlength number of characters.
+      for ($i = 0; $i <= $len - $nlength - 1; $i++) {
+
+        // This is a match, so insert it into our dummy word.
+        if (isset($pos[$i])) {
+          $newword =  substr_replace($newword, $pos[$i], $i);
+          ++$hits;
+        }
+
+        // This is a miss, so replace with a wildcard. .+ is our regex wildcard.
+        else {
+          $newword = ($i == 0 || $i > $len - $nlength) ? $newword : substr_replace($newword, '.+', $i);
+          ++$misses;
+        }
+      }
+
+      // Remove multiple, trailing and leading wildcards.
+      $newword = trim(preg_replace("/\.+/", ".+", $newword), '.+');
+
+      // Only keep our rebuilt word if it beats our minimum spelling match score.
+      if (($hits - $misses)/($len - $nlength - 1) * 100 > $min_spelling) {
+        $clean_words[$key] = $newword;
+      }
+      else {
+        unset($clean_words[$key]);
+      }
+    }
     if ($theme == 'node') {
       // Build a replacement node body containing sections of text with the found
       // words, with leading and trailing text.
       $node->body = strip_tags($node->body);
+
       $section = array();
-      $i = 0;
-      foreach ($words as $k => $word) {
+      foreach ($clean_words as $k => $word) {
         $location = 0;
         // If the word is found, add its position to $section.
-        while (stripos($node->body, $word, $location)) {
-          $section[$i] = stripos($node->body, $word, $location);
+        while (preg_match('/'. $word .'/i', $node->body, $matches, PREG_OFFSET_CAPTURE, $location) && $word != '') {
+          // Make sure we didn't traverse any word breaks by checking for spaces.
+          if (!stripos($matches[0][0], ' ')) {
+            $section[] = $matches[0][1];
+            $clean_words[$k] = $matches[0][0];
+          }
           // Increase $location by one so we don't find the previous location.
-          $location =  $section[$i] + 1;
-          $i++;
+          $location =  $matches[0][1] + 1;
         }
       }
       // Because we found words one by one, the locations are out of order. Sort
@@ -781,10 +873,8 @@ function fuzzysearch_process($query, $theme = 'node', $limit = NULL) {
         $newbody .= '...'. $found .'... ';
         $p++;
       }
-      // Wrap the found words in with tag to highlight them.
-      $newbody = preg_replace('/' . $boundary . '[^' . PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK . ']*' . '(' . implode('|', $words) . ')' . '[^' . PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK . ']*' . $boundary . '/iu', '<strong>\0</strong>', $newbody);
-      //  foreach($words as $k => $word) {
-      //  }
+      // Wrap the found words in a <strong> tag to highlight them.
+      $newbody = preg_replace('/' . $boundary . '[^' . PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK . ']*' . '(' . implode('|', $clean_words) . ')' . '[^' . PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK . ']*' . $boundary . '/iu', '<strong>\0</strong>', $newbody);
 
       $node->body = $newbody;
       $results[] = $node;
@@ -793,7 +883,6 @@ function fuzzysearch_process($query, $theme = 'node', $limit = NULL) {
       $results[] = $node;
     }
   }
-
   if ($results) {
     switch ($theme) {
       case 'node';

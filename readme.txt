@@ -51,6 +51,18 @@ words are broken into on indexing and searching. The default value is 3. The
 lower the value, the more results (and more noise) you will get. Also, a lower
 value will increase the size of your fuzzysearch_index table.
 
+* As of Drupal 6 Fuzzy Search will try to highlight misspelled words. You can
+set the accuracy by choosing a minimum spelling score from 0 to 100, where 100
+means no misspellings are highlighted. You do not need to reindex when you
+change this setting.
+
+This provides a fuzzy spelling check by replacing bad (misspelled) ngrams with
+a wildcard. It is possible to get false matches. For example, searching for
+"rendition" will also highlight "condition" if your spelling score is low
+enough. However, these kinds of matches are likely to have lower score
+completeness and be sorted to the bottom of your results if your search term
+exists in your content.
+
 === Fuzzy Search Block ===
 
 The Drupal 6 version provides a block that performs a fuzzysearch on a query
