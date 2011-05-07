@@ -1,7 +1,10 @@
-; Id:
-name = Fuzzy Search
-description = Enables site-wide fuzzy keyword searching.
-package = Search Engine
-version = VERSION
-core = 6.x
 
+name = Fuzzy Search
+description = "Fuzzy search engine for Search API"
+dependencies[] = search_api
+core = 7.x
+package = Search
+
+files[] = includes/service.inc
+files[] = includes/processor_search.inc
+files[] = includes/processor_excerpt.inc
