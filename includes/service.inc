@@ -70,7 +70,7 @@ class FuzzySearchService extends SearchApiAbstractService {
   }
 
   public function supportsFeature($feature) {
-    return $feature == 'search_api_facets';
+    return $feature == 'fuzzysearch';
   }
 
   public function postUpdate() {
@@ -652,7 +652,7 @@ class FuzzySearchService extends SearchApiAbstractService {
         $results['results'][$row->item_id] = array(
           'id' => $row->item_id,
           'score' => $row->score,
-          'percent' => $row->percent,
+          'percent' => isset($row->percent) ? $row->percent : '', // Have to check because in a views search we return results by default, even without keys.
         );
       }
     }

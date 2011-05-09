@@ -198,6 +198,9 @@ function fuzzysearch_build_excerpt($entity, $index, $keys) {
   // the possible false ngrams when a misspelled ngram matches a real one.
   // This could still return some false ngrams, but that's why it's fuzzy.
   $query = fuzzysearch_static_search_query();
+  if (empty($query)) {
+    return;
+  }
   $query->addField('t', 'ngram');
   $query->addField('t', 'word_id');
   $result = $query->execute();

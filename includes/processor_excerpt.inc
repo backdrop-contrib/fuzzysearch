@@ -1,10 +1,13 @@
 <?php
 
 /**
- * Processor to set the index and search settings. For now this only stores
- * them.
+ * Processor to set the index and search settings. Requires FuzzySearchService.
  */
 class FuzzysearchExcerpt extends SearchApiAbstractProcessor {
+
+  public function supportsIndex(SearchApiIndex $index) {
+    return ($index->server() && $index->server()->supportsFeature('fuzzysearch'));
+  }
 
   public function configurationForm() {
   $form['debug_score'] = array(
