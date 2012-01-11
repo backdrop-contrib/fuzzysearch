@@ -4,7 +4,7 @@
  * Implements hook_install().
  */
 function fuzzysearch_install() {
-  drupal_set_message(st('Fuzzy Search has been installed. Please run cron to index your site. You must add a Search Page or a View to use Fuzzy search.'));  
+  drupal_set_message(st('Fuzzy Search has been installed. Please run cron to index your site. You must add a Search Page or a View to use Fuzzy search.'));
   // Create default server and index.
   $file = DRUPAL_ROOT . '/' . drupal_get_path('module', 'fuzzysearch') . "/includes/fuzzysearch.default.inc";
   if (is_file($file)) {
@@ -17,9 +17,9 @@ function fuzzysearch_install() {
  */
 function fuzzysearch_uninstall() {
   if (module_exists('search_api')) {
-    $servers = search_api_list_servers(FALSE);
+    $servers = search_api_get_service_info();
     foreach ($servers as $server) {
-      if ($server->class == 'fuzzysearch_service') {
+      if ($server->class == 'FuzzySearchService') {
         // Delete indexes. They can't be used with any other servers anyway.
         $indexes = search_api_index_load_multiple(FALSE, $conditions = array('server' => $server->machine_name));
         foreach ($indexes as $index) {
@@ -49,9 +49,9 @@ function fuzzysearch_uninstall() {
  * Implements hook_disable().
  */
 function fuzzysearch_disable() {
-  $servers = search_api_list_servers(FALSE);
+  $servers = search_api_get_service_info();
   foreach ($servers as $server) {
-    if ($server->class == 'fuzzysearch_service') {
+    if ($server->class == 'FuzzySearchService') {
       // Disable the server.
       search_api_server_disable($server->id);
       // Disable indexes and unset server.
@@ -74,9 +74,9 @@ function fuzzysearch_disable() {
  * Implements hook_enable().
  */
 function fuzzysearch_enable() {
-  $servers = search_api_list_servers(FALSE);
+  $servers = search_api_get_service_info(FALSE);
   foreach ($servers as $server) {
-    if ($server->class == 'fuzzysearch_service') {
+    if ($server->class == 'FuzzySearchService') {
       // Enable the servers.
       search_api_server_enable($server->id);
       // Enable indexes.
