@@ -3,7 +3,6 @@
 /**
  * Search service class using the database for storing index information.
  */
-
 class FuzzySearchService extends SearchApiAbstractService {
 
   protected $previous_db;
@@ -41,7 +40,7 @@ class FuzzySearchService extends SearchApiAbstractService {
         '#title' => t('Minimum word length'),
         '#description' => t('The minimum number of characters a word must consist of to be indexed. A higher Fuzzy Search ngram length will override this.'),
         '#options' => drupal_map_assoc(array(1, 2, 3, 4, 5, 6)),
-        '#default_value' => 1,
+        '#default_value' => 3,
       );
     }
     else {
@@ -104,12 +103,9 @@ class FuzzySearchService extends SearchApiAbstractService {
 
     $prefix = 'fuzzysearch_' . $index->machine_name. '_';
     $indexes[$index->machine_name] = array();
-    foreach ($index->options['fields'] as $name => $field) {
-      if (empty($field['indexed'])) {
-        continue;
-      }
+    foreach ($index->getFields() as $name => $field) {
       $table = $this->findFreeTable($prefix, $name);
-      $this->createFieldTable($field, $table);
+      $this->createFieldTable($index, $field, $table);
       $indexes[$index->machine_name][$name]['table'] = $table;
       $indexes[$index->machine_name][$name]['type']  = $field['type'];
       $indexes[$index->machine_name][$name]['boost'] = $field['boost'];
@@ -126,11 +122,18 @@ class FuzzySearchService extends SearchApiAbstractService {
    * characters long.
    */
   protected function findFreeTable($prefix, $name) {
-    $base = $table = drupal_substr($prefix . drupal_strtolower(preg_replace('/[^a-z0-9]/i', '_', $name)), 0, 63);
+    // A DB prefix might further reduce the maximum length of the table name.
+    $maxlen = 63;
+    list($key, $target) = explode(':', $this->options['database'], 2);
+    if ($db_prefix = Database::getConnection($target, $key)->tablePrefix()) {
+      $maxlen -= drupal_strlen($db_prefix);
+    }
+
+    $base = $table = drupal_substr($prefix . drupal_strtolower(preg_replace('/[^a-z0-9]/i', '_', $name)), 0, $maxlen);
     $i = 0;
     while (db_table_exists($table)) {
       $suffix = '_' . ++$i;
-      $table = drupal_substr($base, 0, 63 - drupal_strlen($suffix)) . $suffix;
+      $table = drupal_substr($base, 0, $maxlen - drupal_strlen($suffix)) . $suffix;
     }
     return $table;
   }
@@ -138,19 +141,25 @@ class FuzzySearchService extends SearchApiAbstractService {
   /**
    * Helper method for creating the table for a field.
    */
-  protected function createFieldTable($field, $name) {
+  protected function createFieldTable(SearchApiIndex $index, $field, $name) {
     $table = array(
       'name' => $name,
       'module' => 'fuzzysearch',
       'fields' => array(
         'item_id' => array(
           'description' => 'The primary identifier of the entity.',
-          'type' => 'int',
-          'unsigned' => TRUE,
           'not null' => TRUE,
         ),
       ),
     );
+    // The type of the item_id field depends on the ID field's type.
+    $id_field = $index->datasource()->getIdFieldInfo();
+    $table['fields']['item_id'] += $this->sqlType($id_field['type'] == 'text' ? 'string' : $id_field['type']);
+    if (isset($table['fields']['item_id']['length'])) {
+      // A length of 255 is overkill for IDs. 50 should be more than enough.
+      $table['fields']['item_id']['length'] = 50;
+    }
+
     $type = search_api_extract_inner_type($field['type']);
     if ($type == 'text') {
       $table['fields']['id'] = array(
@@ -228,12 +237,7 @@ class FuzzySearchService extends SearchApiAbstractService {
 
   public function fieldsUpdated(SearchApiIndex $index) {
     $fields = &$this->options['indexes'][$index->machine_name];
-    $new_fields = $index->options['fields'];
-    foreach ($new_fields as $name => $field) {
-      if (empty($field['indexed'])) {
-        unset($new_fields[$name]);
-      }
-    }
+    $new_fields = $index->getFields();
 
     $reindex = FALSE;
     $cleared = FALSE;
@@ -246,28 +250,34 @@ class FuzzySearchService extends SearchApiAbstractService {
       }
       $old_type = $field['type'];
       $new_type = $new_fields[$name]['type'];
+      $fields[$name]['type'] = $new_type;
+      $fields[$name]['boost'] = $new_fields[$name]['boost'];
+      $old_inner_type = search_api_extract_inner_type($old_type);
+      $new_inner_type = search_api_extract_inner_type($new_type);
       if ($old_type != $new_type) {
-        if ($old_type == 'text' || $new_type == 'text') {
-          // A change in fulltext status necessitates completely clearing the index.
+        if ($old_inner_type == 'text' || $new_inner_type == 'text'
+            || search_api_list_nesting_level($old_type) != search_api_list_nesting_level($new_type)) {
+          // A change in fulltext or list status necessitates completely
+          // clearing the index.
           $reindex = TRUE;
           if (!$cleared) {
             $cleared = TRUE;
             $this->deleteItems('all', $index);
           }
           db_drop_table($field['table']);
-          $this->createFieldTable($new_fields[$name], $field['table']);
+          $this->createFieldTable($index, $new_fields[$name], $field['table']);
         }
-        elseif ($this->sqlType($old_type) != $this->sqlType($new_type)) {
+        elseif ($this->sqlType($old_inner_type) != $this->sqlType($new_inner_type)) {
           // There is a change in SQL type. We don't have to clear the index, since types can be converted.
           db_change_field($field['table'], 'value', 'value', $this->sqlType($new_type) + array('description' => "The field's value for this item."));
           $reindex = TRUE;
         }
-        elseif ($old_type == 'date' || $new_type == 'date') {
+        elseif ($old_inner_type == 'date' || $new_inner_type == 'date') {
           // Even though the SQL type stays the same, we have to reindex since conversion rules change.
           $reindex = TRUE;
         }
       }
-      elseif (!$reindex && $new_type == 'text' && $field['boost'] != $new_fields[$name]['boost']) {
+      elseif (!$reindex && $new_inner_type == 'text' && $field['boost'] != $new_fields[$name]['boost']) {
         $multiplier = $new_fields[$name]['boost'] / $field['boost'];
         db_update($field['table'], $this->query_options)
           ->expression('score', 'score * :mult', array(':mult' => $multiplier))
@@ -280,7 +290,7 @@ class FuzzySearchService extends SearchApiAbstractService {
     foreach ($new_fields as $name => $field) {
       $reindex = TRUE;
       $table = $this->findFreeTable($prefix, $name);
-      $this->createFieldTable($field, $table);
+      $this->createFieldTable($index, $field, $table);
       $fields[$name]['table'] = $table;
       $fields[$name]['type']  = $field['type'];
       $fields[$name]['boost'] = $field['boost'];
@@ -343,21 +353,27 @@ class FuzzySearchService extends SearchApiAbstractService {
             ->condition('item_id', $id)
             ->execute();
         $type = $field['type'];
-        $value = $this->convert($field['value'], $type, $field['original_type']);
+        $value = $this->convert($field['value'], $type, $field['original_type'], $index);
         $word_id = NULL;
 
         if (search_api_is_text_type($type, array('text', 'tokens'))) {
           $words = array();
           foreach ($value as $token) {
-            // Taken from core search to reflect less importance of words later in the text.
-            // Focus is a decaying value in terms of the amount of unique words up to this point.
-            // From 100 words and more, it decays, to e.g. 0.5 at 500 words and 0.3 at 1000 words.
+            // Taken from core search to reflect less importance of words later
+            // in the text.
+            // Focus is a decaying value in terms of the amount of unique words
+            // up to this point. From 100 words and more, it decays, to e.g. 0.5
+            // at 500 words and 0.3 at 1000 words.
             $focus = min(1, .01 + 3.5 / (2 + count($words) * .015));
 
             $value = &$token['value'];
             if (is_numeric($value)) {
               $value = ltrim($value, '-0');
             }
+            elseif (drupal_strlen($value) < $this->options['min_chars']) {
+              continue;
+            }
+            $value = drupal_strtolower($value);
             $token['score'] *= $focus;
             if (!isset($words[$value])) {
               $words[$value] = $token;
@@ -432,14 +448,16 @@ class FuzzySearchService extends SearchApiAbstractService {
     return TRUE;
   }
 
-  protected function convert($value, $type, $original_type) {
+  protected function convert($value, $type, $original_type, SearchApiIndex $index) {
     if (search_api_is_list_type($type)) {
       $type = substr($type, 5, -1);
       $original_type = search_api_extract_inner_type($original_type);
       $ret = array();
+      if (is_array($value)) {
       foreach ($value as $v) {
-        $v = $this->convert($v, $type, $original_type);
+          $v = $this->convert($v, $type, $original_type, $index);
         $ret = array_merge($ret, is_array($v) ? $v : array($v));
+      }
       }
       return $ret;
     }
@@ -454,9 +472,50 @@ class FuzzySearchService extends SearchApiAbstractService {
             );
           }
         }
-        return $ret;
-
+        $value = $ret;
+        // FALL-THROUGH!
       case 'tokens':
+        while (TRUE) {
+          foreach ($value as $i => $v) {
+            // Check for over-long tokens.
+            $score = $v['score'];
+            $v = $v['value'];
+            if (drupal_strlen($v) > 50) {
+              $words = preg_split('/[^\p{L}\p{N}]+/u', $v, -1, PREG_SPLIT_NO_EMPTY);
+              if (count($words) > 1 && max(array_map('drupal_strlen', $words)) <= 50) {
+                // Overlong token is due to bad tokenizing.
+                // Check for "Tokenizer" preprocessor on index.
+                if (empty($index->options['processors']['search_api_tokenizer']['status'])) {
+                  watchdog('search_api_db', 'An overlong word (more than 50 characters) was encountered while indexing, due to bad tokenizing. ' .
+                      'It is recommended to enable the "Tokenizer" preprocessor for indexes using database servers. ' .
+                      'Otherwise, the service class has to use its own, fixed tokenizing.', array(), WATCHDOG_WARNING);
+                }
+                else {
+                  watchdog('search_api_db', 'An overlong word (more than 50 characters) was encountered while indexing, due to bad tokenizing. ' .
+                      'Please check your settings for the "Tokenizer" preprocessor to ensure that data is tokenized correctly.',
+                      array(), WATCHDOG_WARNING);
+                }
+              }
+
+              $tokens = array();
+              foreach ($words as $word) {
+                if (drupal_strlen($word) > 50) {
+                  watchdog('search_api_db', 'An overlong word (more than 50 characters) was encountered while indexing: %word.<br />' .
+                      'Database search servers currently cannot index such words correctly – the word was therefore trimmed to the allowed length.',
+                      array('%word' => $word), WATCHDOG_WARNING);
+                  $word = drupal_substr($word, 0, 50);
+                }
+                $tokens[] = array(
+                  'value' => $word,
+                  'score' => $score,
+                );
+              }
+              array_splice($value, $i, 1, $tokens);
+              continue 2;
+            }
+          }
+          break;
+        }
         return $value;
 
       case 'string':
@@ -464,6 +523,10 @@ class FuzzySearchService extends SearchApiAbstractService {
         // For non-dates, PHP can handle this well enough
         if ($original_type == 'date') {
           return date('%c', $value);
+        }
+        if (drupal_strlen($value) > 255) {
+          throw new SearchApiException(t('A string value longer than 255 characters was encountered. ' .
+              "Such values currently aren't supported by the database backend."));
         }
         return $value;
 
@@ -648,6 +711,7 @@ class FuzzySearchService extends SearchApiAbstractService {
       }
       $result = $db_query->execute();
       $time_queries_done = microtime(TRUE);
+
       foreach ($result as $row) {
         $results['results'][$row->item_id] = array(
           'id' => $row->item_id,
@@ -809,7 +873,9 @@ class FuzzySearchService extends SearchApiAbstractService {
       }
       elseif (empty($key['#negation'])) {
         if ($neg) {
-          $key['#negation'] = TRUE; // If this query is negated, we also only need item_ids from subqueries.
+          // If this query is negated, we also only need item_ids from
+          // subqueries.
+          $key['#negation'] = TRUE;
         }
         $nested[] = $key;
       }
@@ -870,7 +936,7 @@ class FuzzySearchService extends SearchApiAbstractService {
           $db_query->union($query, 'UNION ALL');
         }
         // Clone the query for search excerpting.
-        fuzzysearch_static_search_query(clone $db_query);        
+        fuzzysearch_static_search_query(clone $db_query);
         // Group by word and then entity
         $query->groupBy('t.word_id');
         $query->groupBY('t.item_id');
@@ -968,6 +1034,7 @@ class FuzzySearchService extends SearchApiAbstractService {
         $db_query->condition($or);
       }
     }
+
     return $db_query;
   }
 
@@ -1025,7 +1092,7 @@ class FuzzySearchService extends SearchApiAbstractService {
           $cond->condition('t.item_id', $query, $f[2] == '<>' || $f[2] == '!=' ? 'NOT IN' : 'IN');
         }
         else {
-          $alias = $this->getTableAlias($fields[$f[0]], $db_query);
+          $alias = $this->getTableAlias($fields[$f[0]], $db_query, search_api_is_list_type($fields[$f[0]]['type']));
           $cond->condition($alias . '.value', $f[1], $f[2]);
         }
       }
@@ -1035,13 +1102,24 @@ class FuzzySearchService extends SearchApiAbstractService {
 
   /**
    * Helper method for adding a field's table to a database query.
+   *
+   * @param array $field
+   *   The field information array. The "table" key should contain the table
+   *   name to which a join should be made.
+   * @param SelectQueryInterface $db_query
+   *   The database query used.
+   * @param $newjoin
+   *   If TRUE, a join is done even if the table was already joined to in the
+   *   query.
    */
-  protected function getTableAlias(array $field, SelectQueryInterface $db_query) {
+  protected function getTableAlias(array $field, SelectQueryInterface $db_query, $newjoin = FALSE) {
+    if(!$newjoin) {
     foreach ($db_query->getTables() as $alias => $info) {
       $table = $info['table'];
       if (is_scalar($table) && $table == $field['table']) {
         return $alias;
       }
+    }
     }
     return $db_query->join($field['table'], 't', 't.item_id = %alias.item_id');
   }
@@ -1079,7 +1157,7 @@ class FuzzySearchService extends SearchApiAbstractService {
       $field = $fields[$facet['field']];
 
       $select = db_select($table, 't');
-      $alias = $this->getTableAlias($field, $select);
+      $alias = $this->getTableAlias($field, $select, TRUE);
       $select->addField($alias, search_api_is_text_type($field['type']) ? 'word' : 'value', 'value');
       $select->addExpression('COUNT(DISTINCT t.item_id)', 'num');
       $select->groupBy('value');
@@ -1159,4 +1237,5 @@ class FuzzySearchService extends SearchApiAbstractService {
     }
     return FALSE;
   }
+
 }

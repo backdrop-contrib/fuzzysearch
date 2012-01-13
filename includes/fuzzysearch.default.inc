@@ -9,7 +9,7 @@ $values = array(
   'name' => $name,
   'machine_name' => preg_replace('/[^a-z0-9]+/', '_', drupal_strtolower($name)),
   'description' => st('An automatically created Fuzzy Search server.'),
-  'class' => 'fuzzysearch_service',
+  'class' => 'FuzzySearchService',
   'options' => array (
     'database' => 'default:default',
     'min_chars' => '3',
@@ -21,7 +21,7 @@ if ($id = search_api_server_insert ($values)) {
   drupal_set_message(st('Fuzzy Search default server created. !edit this server.', array('!edit' => l(st('Edit'), 'admin/config/search/search_api/server/default_fuzzysearch_server'))));
 }
 else {
-  drupal_set_message(st('Fuzzy Search default server could not be created.'), 'warning');  
+  drupal_set_message(st('Fuzzy Search default server could not be created.'), 'warning');
 }
 
 $name = st('Default fuzzysearch index');
@@ -33,7 +33,7 @@ $values = array(
 'entity_type' => 'node',
 'options' => array (
   'cron_limit' => '50',
-  'fields' => 
+  'fields' =>
   array (
     'search_api_language' => array (
       'name' => 'Item language',
@@ -268,5 +268,5 @@ if ($id = search_api_index_insert ($values)) {
   drupal_set_message(st('Fuzzy Search default index created. !edit this index.', array('!edit' => l(st('Edit'), 'admin/config/search/search_api/index/default_fuzzysearch_index/edit'))));
 }
 else {
-  drupal_set_message(st('Fuzzy Search default index could not be created.'), 'warning');  
+  drupal_set_message(st('Fuzzy Search default index could not be created.'), 'warning');
 }

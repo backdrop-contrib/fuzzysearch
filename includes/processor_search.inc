@@ -77,7 +77,6 @@ class FuzzysearchSearch extends SearchApiAbstractProcessor {
       foreach ($item as $name => &$field) {
         if ($this->testField($name, $field)) {
           $this->split($field);
-          $i=9;
         }
       }
     }
@@ -112,6 +111,6 @@ class FuzzysearchSearch extends SearchApiAbstractProcessor {
       }
     }
 
-  } 
+  }
 }
 

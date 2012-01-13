@@ -84,13 +84,13 @@ function fuzzysearch_search_api_processor_info() {
     'name' => t('Fuzzy Search search settings'),
     'description' => t('These settings control how Fuzzy Search indexes and searches content.'),
     'class' => 'FuzzysearchSearch',
-    'weight' => 0,
+    'weight' => 100,
   );
   $processors['fuzzysearch_excerpt'] = array(
     'name' => t('Fuzzy Search excerpt settings'),
     'description' => t('These settings control how Fuzzy Search displays result excerpts'),
     'class' => 'FuzzysearchExcerpt',
-    'weight' => 0,
+    'weight' => 101,
   );
 
   return $processors;
@@ -104,7 +104,7 @@ function fuzzysearch_search_api_processor_info() {
  *   Word to insert into the index.
  *  @param $nlength
  *   Ngram lenghth
- * 
+ *
  *  @return
  *   Score modifier given to the node from hook_search_score.
  */
@@ -209,7 +209,7 @@ function fuzzysearch_build_excerpt($entity, $index, $keys) {
   }
   $fuzzy = array_merge(fuzzysearch_get_index_options($index), fuzzysearch_get_excerpt_options($index));
 
-  switch ($index->entity_type) {
+  switch ($index->item_type) {
     case 'node':
       node_build_content($entity);
       $text = strip_tags(render($entity->content));
@@ -219,7 +219,7 @@ function fuzzysearch_build_excerpt($entity, $index, $keys) {
 }
 
 /**
- * Store the unexecuted search query so we can reuse it for building the 
+ * Store the unexecuted search query so we can reuse it for building the
  * excerpt. The query is cloned when this function is called.
  */
 function fuzzysearch_static_search_query($query = NULL) {
@@ -227,7 +227,7 @@ function fuzzysearch_static_search_query($query = NULL) {
   if (empty($clone)) {
     $clone = $query;
   }
-  return $clone;  
+  return $clone;
 }
 
 
@@ -397,7 +397,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
   if (empty($section)) {
     return;
   }
-  
+
   // Because we found words one by one, the locations are out of order. Sort
   // so that the locations are in natural order.
   asort($section);

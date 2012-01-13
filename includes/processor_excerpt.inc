@@ -73,10 +73,10 @@ class FuzzysearchExcerpt extends SearchApiAbstractProcessor {
       }
     }
     if (!empty($response['results'])) {
-      $entity_info = entity_get_info($this->index->entity_type);
+      $entity_info = entity_get_info($this->index->item_type);
       // Better way to check if we have text?
       if (isset($entity_info['view modes']['full'])) {
-        $entities = entity_load($this->index->entity_type, array_keys($response['results']));
+        $entities = entity_load($this->index->item_type, array_keys($response['results']));
         foreach ($entities as $key => $entity) {
           $response['results'][$key]['excerpt'] = fuzzysearch_build_excerpt($entity, $this->index, (array) $keys);
         }
