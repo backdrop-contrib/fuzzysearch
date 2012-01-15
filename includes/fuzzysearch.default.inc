@@ -1,15 +1,15 @@
 <?php
 
 /*
- * Default server and index for fuzzysearchService.
+ * Default server and index for FuzzySearchService.
  */
 
 $name = st('Default fuzzysearch server');
 $values = array(
   'name' => $name,
   'machine_name' => preg_replace('/[^a-z0-9]+/', '_', drupal_strtolower($name)),
-  'description' => st('An automatically created Fuzzy Search server.'),
-  'class' => 'FuzzySearchService',
+  'description' => st('A default server automatically created by fuzzysearch.'),
+  'class' => 'fuzzysearch_service',
   'options' => array (
     'database' => 'default:default',
     'min_chars' => '3',
@@ -28,9 +28,9 @@ $name = st('Default fuzzysearch index');
 $values = array(
 'name' => $name,
 'machine_name' => preg_replace('/[^a-z0-9]+/', '_', drupal_strtolower($name)),
-'description' => 'Automatically created Fuzzy Search Index.',
+'description' => st('A default index with basic settings automatically created by fuzzysearch.'),
 'server' => 'default_fuzzysearch_server',
-'entity_type' => 'node',
+'item_type' => 'node',
 'options' => array (
   'cron_limit' => '50',
   'fields' =>
@@ -265,7 +265,7 @@ $values = array(
 );
 
 if ($id = search_api_index_insert ($values)) {
-  drupal_set_message(st('Fuzzy Search default index created. !edit this index.', array('!edit' => l(st('Edit'), 'admin/config/search/search_api/index/default_fuzzysearch_index/edit'))));
+  drupal_set_message(st('Fuzzy Search default index created. !edit this index. Read the !readme if you are not sure what to do next.', array('!edit' => l(st('Edit'), 'admin/config/search/search_api/index/default_fuzzysearch_index/edit'), '!readme' => l('README.txt', '../README.txt') )));
 }
 else {
   drupal_set_message(st('Fuzzy Search default index could not be created.'), 'warning');
