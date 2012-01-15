@@ -265,7 +265,8 @@ $values = array(
 );
 
 if ($id = search_api_index_insert ($values)) {
-  drupal_set_message(st('Fuzzy Search default index created. !edit this index. Read the !readme if you are not sure what to do next.', array('!edit' => l(st('Edit'), 'admin/config/search/search_api/index/default_fuzzysearch_index/edit'), '!readme' => l('README.txt', '../README.txt') )));
+  $path = drupal_get_path('module', 'fuzzysearch') . "/README.txt";
+  drupal_set_message(st('Fuzzy Search default index created. !edit this index. Read the !readme if you are not sure what to do next.', array('!edit' => l(st('Edit'), 'admin/config/search/search_api/index/default_fuzzysearch_index/edit'), '!readme' => l('README.txt', $path) )));
 }
 else {
   drupal_set_message(st('Fuzzy Search default index could not be created.'), 'warning');
