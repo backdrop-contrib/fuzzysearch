@@ -12,8 +12,10 @@
  * Lo     Letter, Other
  * Nd     Number, Decimal Digit
  * No     Number, Other
+ *
+ * Using the FUZZY prefix prevents a collision with core search module.
  */
-define('PREG_CLASS_SEARCH_EXCLUDE',
+define('FUZZY_PREG_CLASS_SEARCH_EXCLUDE',
 '\x{0}-\x{2f}\x{3a}-\x{40}\x{5b}-\x{60}\x{7b}-\x{bf}\x{d7}\x{f7}\x{2b0}-'.
 '\x{385}\x{387}\x{3f6}\x{482}-\x{489}\x{559}-\x{55f}\x{589}-\x{5c7}\x{5f3}-'.
 '\x{61f}\x{640}\x{64b}-\x{65e}\x{66a}-\x{66d}\x{670}\x{6d4}\x{6d6}-\x{6ed}'.
@@ -42,7 +44,8 @@ define('PREG_CLASS_SEARCH_EXCLUDE',
 '\x{fdfc}-\x{fe6b}\x{feff}-\x{ff0f}\x{ff1a}-\x{ff20}\x{ff3b}-\x{ff40}\x{ff5b}-'.
 '\x{ff65}\x{ff70}\x{ff9e}\x{ff9f}\x{ffe0}-\x{fffd}');
 
-define('PREG_CLASS_CJK', '\x{1100}-\x{11FF}\x{3040}-\x{309F}\x{30A1}-\x{318E}' .
+//
+define('FUZZY_PREG_CLASS_CJK', '\x{1100}-\x{11FF}\x{3040}-\x{309F}\x{30A1}-\x{318E}' .
   '\x{31A0}-\x{31B7}\x{31F0}-\x{31FF}\x{3400}-\x{4DBF}\x{4E00}-\x{9FCF}' .
   '\x{A000}-\x{A48F}\x{A4D0}-\x{A4FD}\x{A960}-\x{A97F}\x{AC00}-\x{D7FF}' .
   '\x{F900}-\x{FAFF}\x{FF21}-\x{FF3A}\x{FF41}-\x{FF5A}\x{FF66}-\x{FFDC}' .
@@ -148,7 +151,7 @@ function fuzzysearch_parse_word($word, $fuzzy) {
 function fuzzysearch_cleanse($text) {
   $text = strip_tags($text);
   $text = drupal_strtolower($text);
-  return preg_replace('/['. PREG_CLASS_SEARCH_EXCLUDE . ']+/u', ' ', $text);
+  return preg_replace('/['. FUZZY_PREG_CLASS_SEARCH_EXCLUDE . ']+/u', ' ', $text);
 }
 
 /**
@@ -250,7 +253,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
   }
   global $user;
   global $multibyte;
-  $boundary = '(?:(?<=['. PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK .'])|(?=['. PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK .']))';
+  $boundary = '(?:(?<=['. FUZZY_PREG_CLASS_SEARCH_EXCLUDE . FUZZY_PREG_CLASS_CJK .'])|(?=['. FUZZY_PREG_CLASS_SEARCH_EXCLUDE . FUZZY_PREG_CLASS_CJK .']))';
   $clean_grams = array();
   // Ngrams can occur multiple times, so filter.
   $clean_grams =  fuzzysearch_unique($ngrams);
@@ -428,7 +431,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
     $trail = $lead;
   }
   // Wrap the found words in a <strong> tag to highlight them.
-  $newbody = preg_replace('/' . $boundary . '[^' . PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK . ']*' . '(' . implode('|', $clean_words) . ')' . '[^' . PREG_CLASS_SEARCH_EXCLUDE . PREG_CLASS_CJK . ']*' . $boundary . '/iu', '<strong>\0</strong>', $newbody);
+  $newbody = preg_replace('/' . $boundary . '[^' . FUZZY_PREG_CLASS_SEARCH_EXCLUDE . FUZZY_PREG_CLASS_CJK . ']*' . '(' . implode('|', $clean_words) . ')' . '[^' . FUZZY_PREG_CLASS_SEARCH_EXCLUDE . FUZZY_PREG_CLASS_CJK . ']*' . $boundary . '/iu', '<strong>\0</strong>', $newbody);
   return $newbody . $debug;
 }
 
