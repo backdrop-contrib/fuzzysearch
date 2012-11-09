@@ -918,7 +918,7 @@ class FuzzySearchService extends SearchApiAbstractService {
           $query->condition($or);
         }
         else {
-          $ngrams = fuzzysearch_parse_word($word, $fuzzy['nlength']);
+          $ngrams = fuzzysearch_parse_word($word, $fuzzy);
           foreach ($ngrams['ngrams'] as $ngram) {
             $and = db_and();
             $and->condition('ngram', $ngram)->condition('completeness', $ngrams['comp_min'], '>=')->condition('completeness', $ngrams['comp_max'], '<=');
