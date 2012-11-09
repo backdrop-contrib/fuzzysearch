@@ -629,6 +629,10 @@ class FuzzySearchService extends SearchApiAbstractService {
     elseif ($keys_set) {
       $msg = t('No valid search keys were present in the query.');
       $this->warnings[$msg] = 1;
+      $results = array('result count' => 0, 'results' => array());
+      $results['warnings'] = array_keys($this->warnings);
+      $results['ignored'] = array_keys($this->ignored);
+      return $results;
     }
 
     $filter = $query->getFilter();
