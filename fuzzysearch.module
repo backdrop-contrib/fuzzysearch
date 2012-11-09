@@ -207,6 +207,7 @@ function fuzzysearch_build_excerpt($entity, $index, $keys) {
   $query->addField('t', 'ngram');
   $query->addField('t', 'word_id');
   $result = $query->execute();
+  $clean_grams = array();
   while ($ngram = $result->fetchAssoc()) {
     $clean_grams[$ngram['ngram']][] = $ngram;
   }
