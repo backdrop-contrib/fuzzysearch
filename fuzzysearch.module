@@ -216,7 +216,10 @@ function fuzzysearch_build_excerpt($entity, $index, $keys) {
   switch ($index->item_type) {
     case 'node':
       node_build_content($entity);
-      $text = strip_tags(render($entity->content));
+      // Let removed tags still delimit words.
+      $text = str_replace(array('<', '>'), array(' <', '> '), render($entity->content));
+      $text = strip_tags($text);
+      preg_replace('/\s+/', ' ', $text);
       break;
   }
   return fuzzysearch_process_excerpt($clean_grams, $text, $keys, $fuzzy);
