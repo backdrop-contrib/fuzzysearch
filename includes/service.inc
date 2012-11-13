@@ -728,10 +728,7 @@ class FuzzySearchService extends SearchApiAbstractService {
       $time_queries_done = microtime(TRUE);
       $results['results'] = array();
     }
-    // @todo figure out why  query is returning duplicates so we cant use:
-    //  $results['result count'] = $count_query->execute()->fetchField();
-
-    $results['result count'] = count($results['results']);
+    $results['result count'] = $count_query->execute()->fetchField();
     $results['warnings'] = array_keys($this->warnings);
     $results['ignored'] = array_keys($this->ignored);
 
