@@ -703,16 +703,33 @@ class FuzzySearchService extends SearchApiAbstractService {
         }
       }
       else {
-        if ($fuzzy['sort_score']) {
-          $db_query->orderBy('score', 'DESC');
-          $db_query->orderBy('percent', 'DESC');
+        // If there isn't a "percent" alias already, see if we can find the completeness field to add the expression.
+        if ( ($expressions = $db_query->getExpressions()) != FALSE && !array_key_exists('percent', $expressions ) ) {
+          foreach( $db_query->getTables() as $alias => $tdata ) {
+            if ( isset($tdata['table']) && is_string($tdata['table']) && db_field_exists($tdata['table'], 'completeness') ) {
+              $db_query->addExpression('SUM(t.completeness)', 'percent');
+            }
+          }
         }
-        // This is the default sort, by percent completeness.
+        // Check for the expression before attempting to sort by it.
+        if ( ($expressions = $db_query->getExpressions()) != FALSE && array_key_exists('percent', $expressions ) ) {
+          // If "sort by score" is selected, score before percent.
+          if ($fuzzy['sort_score']) {
+            $db_query->orderBy('score', 'DESC');
+            $db_query->orderBy('percent', 'DESC');
+          }
+          // This is the default sort, by percent completeness.
+          else {
+            $db_query->orderBy('percent', 'DESC');
+            $db_query->orderBy('score', 'DESC');
+          }
+        }
+        // If there is a failure to find a percent expression to sort by, don't try!
         else {
-          $db_query->orderBy('percent', 'DESC');
           $db_query->orderBy('score', 'DESC');
         }
       }
+
       $result = $db_query->execute();
       $time_queries_done = microtime(TRUE);
 
