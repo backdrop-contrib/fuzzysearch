@@ -1,4 +1,8 @@
 <?php
+/**
+ * @file
+ * File for processor excerpt.
+ */
 
 /**
  * Processor to set the index and search settings. Requires FuzzySearchService.
