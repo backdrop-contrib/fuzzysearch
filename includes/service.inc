@@ -557,8 +557,17 @@ class FuzzySearchService extends SearchApiAbstractService {
       $set = $this->setDb();
       foreach ($this->options['indexes'] as $index) {
         foreach ($index as $fields) {
-          foreach ($fields as $field) {
-            db_truncate($field['table'], $this->query_options)->execute();
+          // If you are using one or default fuzzysearch server it will execuite here.
+          if (isset($fields['table']) && !empty($fields['table'])) {
+            db_truncate($fields['table'], $this->query_options)->execute();
+          }
+          else {
+            // More than one server hits here.
+            foreach ($fields as $field) {
+              if (isset($field['table']) && !empty($field['table'])) {
+                db_truncate($field['table'], $this->query_options)->execute();
+              }
+            }
           }
         }
       }
