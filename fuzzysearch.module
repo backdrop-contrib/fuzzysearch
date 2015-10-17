@@ -186,11 +186,11 @@ function fuzzysearch_get_word_id($table) {
  */
 function fuzzysearch_get_index_options($index) {
   return array(
-    'nlength' => $index->options['processors']['fuzzysearch_search']['settings']['ngram_length'],
-    'missing_letters' => $index->options['processors']['fuzzysearch_search']['settings']['missing_letters'],
-    'extra_letters' => $index->options['processors']['fuzzysearch_search']['settings']['extra_letters'],
-    'min_completeness' => $index->options['processors']['fuzzysearch_search']['settings']['completeness'],
-    'sort_score' => $index->options['processors']['fuzzysearch_search']['settings']['sort_score'],
+    'nlength' => isset($index->options['processors']['fuzzysearch_search']) ? $index->options['processors']['fuzzysearch_search']['settings']['ngram_length'] : NULL,
+    'missing_letters' => isset($index->options['processors']['fuzzysearch_search']) ? $index->options['processors']['fuzzysearch_search']['settings']['missing_letters'] : NULL,
+    'extra_letters' => isset($index->options['processors']['fuzzysearch_search']) ? $index->options['processors']['fuzzysearch_search']['settings']['extra_letters'] : NULL,
+    'min_completeness' => isset($index->options['processors']['fuzzysearch_search']) ? $index->options['processors']['fuzzysearch_search']['settings']['completeness'] : NULL,
+    'sort_score' => isset($index->options['processors']['fuzzysearch_search']) ? $index->options['processors']['fuzzysearch_search']['settings']['sort_score'] : NULL,
   );
 }
 
