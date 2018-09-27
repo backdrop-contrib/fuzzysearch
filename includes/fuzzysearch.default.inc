@@ -1,5 +1,7 @@
 <?php
 
+drupal_static_reset('search_api_get_service_info');
+
 /**
  * Default server and index for FuzzySearchService.
  */
