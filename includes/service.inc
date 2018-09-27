@@ -69,7 +69,7 @@ class FuzzySearchService extends SearchApiAbstractService {
   }
 
   public function supportsFeature($feature) {
-    return $feature == 'fuzzysearch';
+    return $feature == 'fuzzysearch' || $feature == 'search_api_facets';
   }
 
   public function postUpdate() {
