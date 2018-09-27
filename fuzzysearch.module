@@ -304,7 +304,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
                 if (!isset($id_count[$ngram_data['word_id']])) {
                   $id_count[$ngram_data['word_id']] = '';
                 }
-                $id_count[$ngram_data['word_id']] = $id_count[$ngram_data['word_id']] + 1;
+                $id_count[$ngram_data['word_id']] = (int) $id_count[$ngram_data['word_id']] + 1;
               }
             }
           }
