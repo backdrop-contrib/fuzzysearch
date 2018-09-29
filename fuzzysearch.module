@@ -466,7 +466,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
  * Recursive array_unique().
  */
 function fuzzysearch_unique($array) {
-  $result = array_map("unserialize", array_unique(array_map("serialize", $array)));
+  $result = array_intersect_key($array, array_unique(array_map('serialize', $array)));
 
   foreach ($result as $key => $value) {
     if (is_array($value)) {
