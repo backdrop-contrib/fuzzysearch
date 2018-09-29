@@ -890,13 +890,16 @@ class FuzzySearchService extends SearchApiAbstractService {
   protected function splitKeys($keys) {
     if (is_scalar($keys)) {
       $proc = drupal_strtolower(trim($keys));
+
       if (is_numeric($proc)) {
-        return ltrim($proc, '-0');
+        $proc = ltrim($proc, '-');
       }
-      elseif (drupal_strlen($proc) < $this->options['min_chars']) {
+
+      if (drupal_strlen($proc) < $this->options['min_chars']) {
         $this->ignored[$keys] = 1;
         return NULL;
       }
+
       $words = preg_split('/[^\p{L}\p{N}]+/u', $proc, -1, PREG_SPLIT_NO_EMPTY);
       if (count($words) > 1) {
         $proc = $this->splitKeys($words);
