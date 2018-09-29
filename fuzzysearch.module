@@ -210,6 +210,8 @@ function fuzzysearch_get_excerpt_options($index) {
  * Fuzzysearch build excerpt.
  */
 function fuzzysearch_build_excerpt($entity, $index, $keys) {
+  $text = '';
+
   // Query each matched node for the search ngrams. We use this for fuzzy.
   // highlighting of misspelled words. We do this per node to narrow.
   // the possible false ngrams when a misspelled ngram matches a real one.
