@@ -432,7 +432,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
   // so that the locations are in natural order.
   asort($section);
   ksort($section_length);
-  $section = array_values($section);
+  $section = array_unique(array_values($section));
   $section_length = array_values($section_length);
   $p = 0;
   $found = $newbody = '';
