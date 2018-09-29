@@ -861,7 +861,7 @@ class FuzzySearchService extends SearchApiAbstractService {
       if (is_array($nested)) {
         $nested = $this->prepareKeys($nested);
         if ($neg == !empty($nested['#negation'])) {
-          if ($nested['#conjunction'] == $conj) {
+          if (isset($nested['#conjunction']) && $nested['#conjunction'] == $conj) {
             unset($nested['#conjunction'], $nested['#negation']);
             foreach ($nested as $renested) {
               $keys[] = $renested;
