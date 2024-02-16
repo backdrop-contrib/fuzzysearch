@@ -41,7 +41,7 @@ class FuzzySearchService extends SearchApiAbstractService {
         '#type' => 'select',
         '#title' => t('Minimum word length'),
         '#description' => t('The minimum number of characters a word must consist of to be indexed. A higher Fuzzy Search ngram length will override this.'),
-        '#options' => drupal_map_assoc(array(1, 2, 3, 4, 5, 6)),
+        '#options' => backdrop_map_assoc(array(1, 2, 3, 4, 5, 6)),
         '#default_value' => 3,
       );
     }
@@ -62,7 +62,7 @@ class FuzzySearchService extends SearchApiAbstractService {
           '#type' => 'select',
           '#title' => t('Minimum word length'),
           '#description' => t('The minimum number of characters a word must consist of to be indexed.'),
-          '#options' => drupal_map_assoc(array(1, 2, 3, 4, 5, 6)),
+          '#options' => backdrop_map_assoc(array(1, 2, 3, 4, 5, 6)),
           '#default_value' => $this->options['min_chars'],
         ),
       );
@@ -142,14 +142,14 @@ class FuzzySearchService extends SearchApiAbstractService {
     $maxlen = 63;
     list($key, $target) = explode(':', $this->options['database'], 2);
     if ($db_prefix = Database::getConnection($target, $key)->tablePrefix()) {
-      $maxlen -= drupal_strlen($db_prefix);
+      $maxlen -= backdrop_strlen($db_prefix);
     }
 
-    $base = $table = drupal_substr($prefix . drupal_strtolower(preg_replace('/[^a-z0-9]/i', '_', $name)), 0, $maxlen);
+    $base = $table = backdrop_substr($prefix . backdrop_strtolower(preg_replace('/[^a-z0-9]/i', '_', $name)), 0, $maxlen);
     $i = 0;
     while (db_table_exists($table)) {
       $suffix = '_' . ++$i;
-      $table = drupal_substr($base, 0, $maxlen - drupal_strlen($suffix)) . $suffix;
+      $table = backdrop_substr($base, 0, $maxlen - backdrop_strlen($suffix)) . $suffix;
     }
     return $table;
   }
@@ -425,10 +425,10 @@ class FuzzySearchService extends SearchApiAbstractService {
             if (is_numeric($value)) {
               $value = ltrim($value, '-0');
             }
-            elseif (drupal_strlen($value) < $this->options['min_chars']) {
+            elseif (backdrop_strlen($value) < $this->options['min_chars']) {
               continue;
             }
-            $value = drupal_strtolower($value);
+            $value = backdrop_strtolower($value);
             $token['score'] *= $focus;
             if (!isset($words[$value])) {
               $words[$value] = $token;
@@ -544,9 +544,9 @@ class FuzzySearchService extends SearchApiAbstractService {
             // Check for over-long tokens.
             $score = $v['score'];
             $v = $v['value'];
-            if (drupal_strlen($v) > 50) {
+            if (backdrop_strlen($v) > 50) {
               $words = preg_split('/[^\p{L}\p{N}]+/u', $v, -1, PREG_SPLIT_NO_EMPTY);
-              if (count($words) > 1 && max(array_map('drupal_strlen', $words)) <= 50) {
+              if (count($words) > 1 && max(array_map('backdrop_strlen', $words)) <= 50) {
                 // Overlong token is due to bad tokenizing.
                 // Check for "Tokenizer" preprocessor on index.
                 if (empty($index->options['processors']['search_api_tokenizer']['status'])) {
@@ -559,11 +559,11 @@ class FuzzySearchService extends SearchApiAbstractService {
 
               $tokens = array();
               foreach ($words as $word) {
-                if (drupal_strlen($word) > 50) {
+                if (backdrop_strlen($word) > 50) {
                   watchdog('search_api_db', 'An overlong word (more than 50 characters) was encountered while indexing: %word.<br />Database search servers currently cannot index such words correctly – the word was therefore trimmed to the allowed length.', array(
                     '%word' => $word,
                   ), WATCHDOG_WARNING);
-                  $word = drupal_substr($word, 0, 50);
+                  $word = backdrop_substr($word, 0, 50);
                 }
                 $tokens[] = array(
                   'value' => $word,
@@ -584,7 +584,7 @@ class FuzzySearchService extends SearchApiAbstractService {
         if ($original_type == 'date') {
           return date('%c', $value);
         }
-        if (drupal_strlen($value) > 255) {
+        if (backdrop_strlen($value) > 255) {
           throw new SearchApiException(t("A string value longer than 255 characters was encountered. Such values currently aren't supported by the database backend."));
         }
         return $value;
@@ -889,13 +889,13 @@ class FuzzySearchService extends SearchApiAbstractService {
    */
   protected function splitKeys($keys) {
     if (is_scalar($keys)) {
-      $proc = drupal_strtolower(trim($keys));
+      $proc = backdrop_strtolower(trim($keys));
 
       if (is_numeric($proc)) {
         $proc = ltrim($proc, '-');
       }
 
-      if (drupal_strlen($proc) < $this->options['min_chars']) {
+      if (backdrop_strlen($proc) < $this->options['min_chars']) {
         $this->ignored[$keys] = 1;
         return NULL;
       }

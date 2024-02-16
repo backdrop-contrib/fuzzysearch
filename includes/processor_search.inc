@@ -29,21 +29,21 @@ class FuzzysearchSearch extends SearchApiAbstractProcessor {
       '#type' => 'select',
       '#title' => t('Ngram length'),
       '#description' => t('Choose 3 unless you have special requirements.'),
-      '#options' => drupal_map_assoc(array(2, 3, 4, 5, 6)),
+      '#options' => backdrop_map_assoc(array(2, 3, 4, 5, 6)),
       '#default_value' => 3,
     );
     $form['missing_letters'] = array(
       '#type' => 'select',
       '#title' => t('Assume missing letters in search terms'),
       '#description' => t('A search term as entered by a user may be missing letters. Up to how many missing letters in the term do you want to assume? 0 means the term will not return longer words in the results. 1 means a 4 letter search term will also check 5 letters words in the index.'),
-      '#options' => drupal_map_assoc(range(0, 50)),
+      '#options' => backdrop_map_assoc(range(0, 50)),
       '#default_value' => 5,
     );
     $form['extra_letters'] = array(
       '#type' => 'select',
       '#title' => t('Assume extra letters in search terms'),
       '#description' => t('A search term as entered by a user may have extra letters. Up to how many extra letters in the term do you want to assume? 0 means the term will not return shorter words in the results. 1 means a 4 letter search term will also check 3 letters words in the index.'),
-      '#options' => drupal_map_assoc(range(0, 50)),
+      '#options' => backdrop_map_assoc(range(0, 50)),
       '#default_value' => 5,
     );
     $form['completeness'] = array(
@@ -112,7 +112,7 @@ class FuzzysearchSearch extends SearchApiAbstractProcessor {
       foreach ($field['value'] as $key => $value) {
         $word = '';
         $word = $value['value'];
-        $length = drupal_strlen($word);
+        $length = backdrop_strlen($word);
         if ($length < $this->options['ngram_length']) {
           continue;
         }
@@ -129,7 +129,7 @@ class FuzzysearchSearch extends SearchApiAbstractProcessor {
         }
         // Split word into ngrams.
         for ($i = 0; $i < ($length - $this->options['ngram_length'] + 1); $i++) {
-          $ngrams['ngrams'][] = drupal_substr($word, $i, $this->options['ngram_length']);
+          $ngrams['ngrams'][] = backdrop_substr($word, $i, $this->options['ngram_length']);
         }
         $field['value'][$key] += $ngrams;
         $i = 9;

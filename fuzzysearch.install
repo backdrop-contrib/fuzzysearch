@@ -10,10 +10,8 @@
  */
 function fuzzysearch_install() {
   // Create default server and index.
-  $file = DRUPAL_ROOT . '/' . drupal_get_path('module', 'fuzzysearch') . "/includes/fuzzysearch.default.inc";
-  if (is_file($file)) {
-    require_once $file;
-  }
+  module_load_include('inc', 'fuzzysearch', 'includes/fuzzysearch.default');
+  _fuzzysearch_create_default_server_index();
 }
 
 /**

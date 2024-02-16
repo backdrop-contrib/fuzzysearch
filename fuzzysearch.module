@@ -59,17 +59,6 @@ define('FUZZYSEARCH_PREG_CLASS_CJK', '\x{1100}-\x{11FF}\x{3040}-\x{309F}\x{30A1}
   '\x{20000}-\x{2FFFD}\x{30000}-\x{3FFFD}');
 
 /**
- * Implements hook_help().
- */
-function fuzzysearch_help($path, $arg) {
-  switch ($path) {
-    case 'admin/help#fuzzysearch':
-      $output = file_get_contents(drupal_get_path('module', 'fuzzysearch') . '/README.md');
-      return module_exists('markdown') ? filter_xss_admin(module_invoke('markdown', 'filter', 'process', 0, -1, $output)) : '<pre>' . check_plain($output) . '</pre>';
-  }
-}
-
-/**
  * Implements hook_theme().
  */
 function fuzzysearch_theme() {
@@ -114,6 +103,17 @@ function fuzzysearch_search_api_processor_info() {
 }
 
 /**
+ * Implements hook_autoload_info().
+ */
+function fuzzysearch_autoload_info() {
+  return array(
+    'FuzzySearchService' => 'includes/service.inc',
+    'FuzzysearchSearch' => 'includes/processor_search.inc',
+    'FuzzysearchExcerpt' => 'includes/processor_excerpt.inc',
+  );
+}
+
+/**
  * Insert the words into the database as they are indexed.
  *
  * @param string $word
@@ -128,7 +128,7 @@ function fuzzysearch_parse_word($word, array $fuzzy = array()) {
   // Cleanse and remove spaces.
   $ngrams = array('ngrams' => array());
   $word = str_replace(' ', '', fuzzysearch_cleanse($word));
-  $length = drupal_strlen($word);
+  $length = backdrop_strlen($word);
   $ngrams['completeness'] = ($length - $fuzzy['nlength'] + 1) == 0 ? 100 : number_format(100 / ($length - $fuzzy['nlength'] + 1), 3);
 
   // $comp_min is the minumum completeness an ngram can have to return words.
@@ -152,7 +152,7 @@ function fuzzysearch_parse_word($word, array $fuzzy = array()) {
 
   // Split word into ngrams.
   for ($i = 0; $i < ($length - $fuzzy['nlength'] + 1); $i++) {
-    $ngrams['ngrams'][] = drupal_substr($word, $i, $fuzzy['nlength']);
+    $ngrams['ngrams'][] = backdrop_substr($word, $i, $fuzzy['nlength']);
   }
   return $ngrams;
 }
@@ -162,7 +162,7 @@ function fuzzysearch_parse_word($word, array $fuzzy = array()) {
  */
 function fuzzysearch_cleanse($text) {
   $text = strip_tags($text);
-  $text = drupal_strtolower($text);
+  $text = backdrop_strtolower($text);
   return preg_replace('/[' . FUZZYSEARCH_PREG_CLASS_SEARCH_EXCLUDE . ']+/u', ' ', $text);
 }
 
@@ -254,7 +254,7 @@ function fuzzysearch_build_excerpt($entity, $index, $keys) {
  * The query is cloned when this function is called.
  */
 function fuzzysearch_static_search_query($query = NULL) {
-  $clone = drupal_static('fuzzy_query', $query);
+  $clone = backdrop_static('fuzzy_query', $query);
   if (empty($clone)) {
     $clone = $query;
   }
@@ -289,7 +289,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
     // If we have an exact match, let's skip the work to check for misspellings.
     if (!preg_match('/\b' . $clean_word . '\b/iu', $text)) {
       $pos = $id_count = array();
-      $len = drupal_strlen($clean_word);
+      $len = backdrop_strlen($clean_word);
       // Ignore search terms less than the ngram length.
       if ($len >= $fuzzy['nlength']) {
         // Get the position of each good hit.
@@ -354,15 +354,15 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
         for ($i = 0; $i <= $len - $fuzzy['nlength']; $i++) {
           // This is a match, so insert it into our dummy word.
           if (isset($pos[$i])) {
-            $newword = drupal_substr($newword, 0, $i + $pos_plus) . $pos[$i] . drupal_substr($newword, $i + $pos_plus + $fuzzy['nlength'], $len);
+            $newword = backdrop_substr($newword, 0, $i + $pos_plus) . $pos[$i] . backdrop_substr($newword, $i + $pos_plus + $fuzzy['nlength'], $len);
             ++$hits;
           }
 
           // This is a miss, so replace with a wildcard.
           else {
             // But don't overwrite a letter, only a '.' .
-            if (drupal_substr($newword, $i + $pos_plus + $fuzzy['nlength'] - 1, 1) == '.') {
-              $newword = ($i == 0 || $i + $pos_plus > $len - $fuzzy['nlength']) ? $newword : drupal_substr($newword, 0, $i + $pos_plus + $fuzzy['nlength'] - 1) . '.*' . drupal_substr($newword, $i + $pos_plus + 1 + $fuzzy['nlength'] - 1);
+            if (backdrop_substr($newword, $i + $pos_plus + $fuzzy['nlength'] - 1, 1) == '.') {
+              $newword = ($i == 0 || $i + $pos_plus > $len - $fuzzy['nlength']) ? $newword : backdrop_substr($newword, 0, $i + $pos_plus + $fuzzy['nlength'] - 1) . '.*' . backdrop_substr($newword, $i + $pos_plus + 1 + $fuzzy['nlength'] - 1);
               // If we insert here, we need to adjust the positions in the
               // $pos array.
               $pos_plus++;
@@ -415,7 +415,7 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
       // care about the position.
       if (!stripos($matches[0][0], ' ')) {
         $section[] = _fuzzysearch_char_count($text, $matches[0][1]);
-        $section_length[$matches[0][1]] = drupal_strlen($word);
+        $section_length[$matches[0][1]] = backdrop_strlen($word);
         $clean_words[$k] = $matches[0][0];
       }
       // Increase $location by one so we don't find the previous location.
@@ -448,8 +448,8 @@ function fuzzysearch_process_excerpt($ngrams, $text, $keys, $fuzzy) {
     }
     // Put an excerpt into our replacement node body, with the.
     // found word in the center.
-    $found = $start - $lead < 0 ? drupal_substr($text, 0, $fuzzy['excerpt_length']) : drupal_substr($text, $start - $lead, $trail + $lead);
-    if ($fuzzy['max_result_length'] && (drupal_strlen($newbody . $found) > $fuzzy['max_result_length'])) {
+    $found = $start - $lead < 0 ? backdrop_substr($text, 0, $fuzzy['excerpt_length']) : backdrop_substr($text, $start - $lead, $trail + $lead);
+    if ($fuzzy['max_result_length'] && (backdrop_strlen($newbody . $found) > $fuzzy['max_result_length'])) {
       break;
     }
     $newbody .= '...' . $found . '... ';
